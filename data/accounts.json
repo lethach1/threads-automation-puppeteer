@@ -1,0 +1,14 @@
+{
+    "account_1": {
+        "username": "your_email1@gmail.com",
+        "password": "your_password1"
+    },
+    "account_2": {
+        "username": "your_email2@gmail.com", 
+        "password": "your_password2"
+    },
+    "account_3": {
+        "username": "your_email3@gmail.com",
+        "password": "your_password3"
+    }
+}
