@@ -17,21 +17,32 @@ export class ProfileService {
    */
   async loadProfiles() {
     try {
+      console.log('📁 Loading profiles from:', this.baseDir);
+      
       const entries = await fs.readdir(this.baseDir, { withFileTypes: true });
+      console.log('📋 Found entries:', entries.map(e => e.name));
+      
       const profileDirs = entries.filter((e) => e.isDirectory());
+      console.log('👤 Profile directories:', profileDirs.map(d => d.name));
 
       const profiles = [];
       for (const dirent of profileDirs) {
+        console.log('🔍 Loading profile:', dirent.name);
         const profile = await this.loadProfile(dirent.name);
         if (profile) {
           profiles.push(profile);
+          console.log('✅ Profile loaded:', profile.name);
+        } else {
+          console.log('❌ Failed to load profile:', dirent.name);
         }
       }
 
       // Sắp xếp theo tên
       profiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      console.log('📊 Total profiles loaded:', profiles.length);
       return profiles;
     } catch (error) {
+      console.error('❌ Error loading profiles:', error.message);
       return [];
     }
   }

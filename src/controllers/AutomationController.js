@@ -24,6 +24,7 @@ export class AutomationController {
    * @param {number} index
    */
   async runProfileAutomation(profile, index) {
+    console.log(`👤 Starting automation for profile: ${profile.name} (${index + 1}/${this.profiles.length})`);
     let browser = null;
     let page = null;
 
@@ -50,8 +51,10 @@ export class AutomationController {
       // Đảm bảo login
       const loggedIn = await AuthenticationService.ensureLoggedIn(page, profile);
       if (!loggedIn) {
+        console.error(`❌ Login failed for profile: ${profile.name}`);
         throw new Error('Login failed or timeout');
       }
+      console.log(`✅ Successfully logged in for profile: ${profile.name}`);
 
       // Thực hiện hành động chính
       const userInfo = await this.getUserInfo(page);
@@ -188,20 +191,32 @@ export class AutomationController {
   async runMultiAccountAutomation() {
     // Load cấu hình profiles
     this.profiles = await this.profileService.loadProfiles();
+    console.log(`📊 Loaded ${this.profiles.length} profiles for automation`);
+
+    if (this.profiles.length === 0) {
+      console.log('⚠️ No profiles found. Please check your profiles directory.');
+      return;
+    }
 
     for (let i = 0; i < this.profiles.length; i++) {
       const profile = this.profiles[i];
+      console.log(`🔄 Processing profile ${i + 1}/${this.profiles.length}: ${profile.name}`);
 
       try {
         await this.runProfileAutomation(profile, i);
+        console.log(`✅ Completed profile: ${profile.name}`);
 
         // Nghỉ giữa các profile để tránh bị detect
         if (i < this.profiles.length - 1) {
+          console.log('⏳ Waiting between profiles...');
           await humanDelay(10000, 15000);
         }
       } catch (error) {
+        console.error(`❌ Error processing profile ${profile.name}:`, error.message);
         continue; // Tiếp tục với profile tiếp theo
       }
     }
+    
+    console.log('🎉 All profiles processed!');
   }
 }

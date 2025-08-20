@@ -15,8 +15,10 @@ export class AuthenticationService {
    */
   static async performAutoLogin(page, profile) {
     if (!profile.hasCredentials()) {
+      console.log(`⚠️ No credentials found for profile: ${profile.name}`);
       return false;
     }
+    console.log(`🔐 Attempting auto login for profile: ${profile.name}`);
 
     try {
       // Tìm và nhập username

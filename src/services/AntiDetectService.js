@@ -1,5 +1,3 @@
-import { DEFAULT_ACCEPT_LANGUAGE, DEFAULT_TIMEZONE } from '../config/constants.js';
-
 /**
  * Anti-detect Service - Quản lý fingerprinting
  */
@@ -11,6 +9,7 @@ export class AntiDetectService {
    */
   static async applySettings(page, profile) {
     try {
+      const { DEFAULT_ACCEPT_LANGUAGE, DEFAULT_TIMEZONE } = await import('../config/constants.js');
       const lang = profile.getLanguage() || DEFAULT_ACCEPT_LANGUAGE;
       const languagesList = lang.split(',').map(l => l.split(';')[0]).filter(Boolean);
       const timezone = profile.getTimezone() || DEFAULT_TIMEZONE;
@@ -51,7 +50,8 @@ export class AntiDetectService {
 
     try {
       const context = page.browser().defaultBrowserContext();
-      await context.overridePermissions('https://www.threads.net', ['geolocation']);
+      const { THREADS_URL } = await import('../config/constants.js');
+      await context.overridePermissions(THREADS_URL, ['geolocation']);
       await page.setGeolocation(geolocation);
     } catch (error) {
       // Silent fail
