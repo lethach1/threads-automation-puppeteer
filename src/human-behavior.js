@@ -3,7 +3,7 @@
  * Sử dụng thư viện ghost-cursor để mô phỏng hành vi người dùng thật
  */
 
-const { createCursor } = require('ghost-cursor');
+import { createCursor } from 'ghost-cursor';
 
 /**
  * Tạo delay ngẫu nhiên giống con người
@@ -11,7 +11,7 @@ const { createCursor } = require('ghost-cursor');
  * @param {number} max - Thời gian tối đa (ms)
  * @returns {Promise} Promise với delay
  */
-const humanDelay = async (min = 1000, max = 3000) => {
+export const humanDelay = async (min = 1000, max = 3000) => {
   const delay = Math.floor(Math.random() * (max - min + 1)) + min;
   await new Promise(resolve => setTimeout(resolve, delay));
 };
@@ -21,7 +21,7 @@ const humanDelay = async (min = 1000, max = 3000) => {
  * @param {Object} page - Puppeteer page object
  * @returns {Object} Ghost cursor instance
  */
-const createGhostCursor = (page) => {
+export const createGhostCursor = (page) => {
   return createCursor(page, {
     // Cấu hình để tạo hành vi tự nhiên hơn
     defaultTweenConfig: {
@@ -39,7 +39,7 @@ const createGhostCursor = (page) => {
  * @param {number} minDelay - Delay tối thiểu giữa các ký tự (ms)
  * @param {number} maxDelay - Delay tối đa giữa các ký tự (ms)
  */
-const humanType = async (page, selector, text, minDelay = 50, maxDelay = 150) => {
+export const humanType = async (page, selector, text, minDelay = 50, maxDelay = 150) => {
   const cursor = createGhostCursor(page);
   
   // Click vào element với ghost cursor
@@ -63,7 +63,7 @@ const humanType = async (page, selector, text, minDelay = 50, maxDelay = 150) =>
  * @param {string} selector - CSS selector của element
  * @param {Object} options - Options cho movement
  */
-const humanMouseMove = async (page, selector, options = {}) => {
+export const humanMouseMove = async (page, selector, options = {}) => {
   const cursor = createGhostCursor(page);
   await cursor.move(selector, options);
 };
@@ -74,7 +74,7 @@ const humanMouseMove = async (page, selector, options = {}) => {
  * @param {string} selector - CSS selector của element
  * @param {Object} options - Options cho click
  */
-const humanClick = async (page, selector, options = {}) => {
+export const humanClick = async (page, selector, options = {}) => {
   const cursor = createGhostCursor(page);
   await cursor.click(selector, options);
   
@@ -88,7 +88,7 @@ const humanClick = async (page, selector, options = {}) => {
  * @param {number} distance - Khoảng cách scroll (px)
  * @param {string} direction - Hướng scroll ('up' hoặc 'down')
  */
-const humanScroll = async (page, distance = 500, direction = 'down') => {
+export const humanScroll = async (page, distance = 500, direction = 'down') => {
   const steps = Math.floor(Math.random() * 20) + 10;
   const stepDistance = distance / steps;
   
@@ -117,7 +117,7 @@ const humanScroll = async (page, distance = 500, direction = 'down') => {
  * @param {string} selector - CSS selector của element
  * @param {number} duration - Thời gian hover (ms)
  */
-const humanHover = async (page, selector, duration = 2000) => {
+export const humanHover = async (page, selector, duration = 2000) => {
   const cursor = createGhostCursor(page);
   await cursor.move(selector);
   await humanDelay(duration * 0.8, duration * 1.2);
@@ -129,7 +129,7 @@ const humanHover = async (page, selector, duration = 2000) => {
  * @param {string} selector - CSS selector của element
  * @param {Object} options - Options cho scroll
  */
-const humanScrollToElement = async (page, selector, options = {}) => {
+export const humanScrollToElement = async (page, selector, options = {}) => {
   const element = await page.$(selector);
   if (!element) return;
   
@@ -431,14 +431,8 @@ const humanTypeWithMistakes = async (page, selector, text, mistakeRate = 0.05) =
   }
 };
 
-module.exports = {
-  humanDelay,
-  humanType,
-  humanMouseMove,
-  humanClick,
-  humanScroll,
-  humanHover,
-  humanScrollToElement,
+// Export tất cả functions đã được export ở trên
+export {
   humanSwipe,
   humanDoubleClick,
   humanRightClick,
@@ -451,6 +445,5 @@ module.exports = {
   humanUndoRedo,
   humanRandomMouseMovement,
   humanClickWithOffset,
-  humanTypeWithMistakes,
-  createGhostCursor
+  humanTypeWithMistakes
 };

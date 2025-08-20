@@ -1,8 +1,20 @@
 {
+  "name": "threads-automation-puppeteer",
+  "version": "1.0.0",
+  "description": "Multi-account Threads automation with Puppeteer",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js",
+    "dev": "node --watch src/main.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["puppeteer", "automation", "threads", "multi-account"],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "ghost-cursor": "^1.4.1",
-    "puppeteer": "^24.16.2",
     "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ghost-cursor": "^1.1.9"
   }
 }
