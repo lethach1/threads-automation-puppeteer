@@ -3,7 +3,7 @@
  */
 
 // URLs
-export const THREADS_URL = 'https://www.threads.net/';
+export const THREADS_URL = 'https://www.threads.com/';
 export const LOGIN_PATH_HINTS = ['/login', '/accounts/login'];
 
 // Default Settings
@@ -19,7 +19,11 @@ export const BROWSER_ARGS = [
   '--no-zygote',
   '--lang=vi-VN',
   '--start-maximized',
-  '--window-size=1366,768'
+  '--window-size=1366,768',
+  // Giới hạn dung lượng HTTP disk cache (~100MB) để tránh profile phình quá mức
+  '--disk-cache-size=104857600',
+  // Giới hạn dung lượng media cache (~32MB) cho audio/video
+  '--media-cache-size=33554432'
 ];
 
 export const WEBRTC_FLAGS = [

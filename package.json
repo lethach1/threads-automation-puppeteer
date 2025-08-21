@@ -7,14 +7,22 @@
   "scripts": {
     "start": "node src/main.js",
     "dev": "node --watch src/main.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "debug": "node --inspect src/main.js",
+    "debug:break": "node --inspect-brk src/main.js",
+    "debug:test": "node debug.js"
   },
-  "keywords": ["puppeteer", "automation", "threads", "multi-account"],
+  "keywords": [
+    "puppeteer",
+    "automation",
+    "threads",
+    "multi-account"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "ghost-cursor": "^1.1.9",
+    "puppeteer": "^24.17.0",
     "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "ghost-cursor": "^1.1.9"
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }
