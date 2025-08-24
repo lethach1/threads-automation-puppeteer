@@ -396,14 +396,16 @@ const humanClickWithOffset = async (page, selector, options = {}) => {
 /**
  * Mô phỏng type với mistakes và corrections
  * @param {Object} page - Puppeteer page object
- * @param {string} selector - CSS selector của input field
+ * @param {string} xpath - XPath của input field
  * @param {string} text - Text cần type
  * @param {number} mistakeRate - Tỷ lệ gõ sai (0-1)
  */
-const humanTypeWithMistakes = async (page, selector, text, mistakeRate = 0.05) => {
+const humanTypeWithMistakes = async (page, xpath, text, mistakeRate = 0.08) => {
   const cursor = createGhostCursor(page);
   
-  await cursor.click(selector);
+  // Tìm element theo XPath và click trực tiếp
+  const [element] = await page.$x(xpath);
+  await cursor.click(element);
   await humanDelay(200, 500);
   
   for (let i = 0; i < text.length; i++) {

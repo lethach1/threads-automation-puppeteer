@@ -1,6 +1,6 @@
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
-import { humanDelay, humanScroll, humanHover, humanClick } from '../human-behavior.js';
+import { humanDelay, humanScroll, humanHover, humanClick, humanTypeWithMistakes } from '../human-behavior.js';
 import { THREADS_URL, TIMEOUTS, SELECTORS } from '../config/constants.js';
 import { ProfileService } from '../services/ProfileService.js';
 import { AntiDetectService } from '../services/AntiDetectService.js';
@@ -56,18 +56,19 @@ export class AutomationController {
       }
       console.log(`✅ Successfully logged in for profile: ${profile.name}`);
 
-      // Thực hiện hành động chính
-      const userInfo = await this.getUserInfo(page);
-      
+      // Thực hiện đăng bài
+      const postXpath = '/html/body/div[3]/div/div/div[2]/div[2]/div/div/div/div[1]/div[1]/div[1]/div/div/div[2]/div[1]/div[2]/div/div[1]/span';
+      const contentPostXpath = '/html/body/div[3]/div/div/div[3]/div/div/div[1]/div/div[2]/div/div/div/div[2]/div/div/div/div/div/div[2]/div/div/div[1]/div[2]/div[2]/div[1]/p';
+
+      const [postElement] = await page.$x(postXpath);
+      await postElement.click();
+      await humanDelay(2000, 4000);
+      await humanTypeWithMistakes(page, contentPostXpath, 'Hello, world!');
+
+
+
       // Thực hiện các hành động giống người dùng thật
       await this.performHumanActions(page, profile.name);
-
-      // Chụp screenshot
-      const screenshotPath = `./screenshot_${profile.name}_${Date.now()}.png`;
-      await page.screenshot({
-        path: screenshotPath,
-        fullPage: false
-      });
 
       // Đợi một chút trước khi đóng
       await humanDelay(2000, 4000);
@@ -85,43 +86,69 @@ export class AutomationController {
     }
   }
 
+  
+
   /**
-   * Lấy thông tin user từ trang
+   * Đăng nhập với username và password
    * @param {import('puppeteer').Page} page
-   * @returns {Promise<string>}
+   * @param {string} username
+   * @param {string} password
    */
-  async getUserInfo(page) {
-    try {
-      // Scroll một chút để load content
-      await humanScroll(page, 300, 'down');
-      await humanDelay(1000, 2000);
-
-      // Thử tìm username trong Threads
-      const username = await page.evaluate(() => {
-        const selectors = [
-          '[data-testid="primaryColumn"] h1',
-          '[role="main"] h1',
-          'h1',
-          '[data-testid="userDisplayName"]',
-          '.x1lliihq .x193iq5w',
-          '[data-testid="UserName"]',
-          'span[dir="auto"]'
-        ];
-
-        for (const selector of selectors) {
-          const element = document.querySelector(selector);
-          if (element && element.textContent.trim()) {
-            return element.textContent.trim();
-          }
-        }
-
-        return null;
-      });
-
-      return username || 'User info not found';
-    } catch (error) {
-      return 'Error getting user info';
+  async login(page, username, password) {
+    const usernameXpath = '/html/body/div[3]/div/div/div[3]/div/div/div/div[1]/div[1]/div[3]/form/div/input';
+    const passwordXpath = '/html/body/div[3]/div/div/div[3]/div/div/div/div[1]/div[1]/div[3]/form/div/div[1]/div[1]/input';
+    const loginButtonXpath = '/html/body/div[3]/div/div/div[3]/div/div/div/div[1]/div[1]/div[3]/form/div/div[1]/div[2]/div[2]/div/div';
+    
+    // Đợi username input xuất hiện
+    await page.waitForXPath(usernameXpath, { timeout: 10000 });
+    
+    // Tìm và nhập username
+    const [usernameElement] = await page.$x(usernameXpath);
+    if (!usernameElement) {
+      return false;
     }
+    
+    // Click vào username input để focus
+    await usernameElement.click();
+    await humanDelay(500, 1000);
+    
+    // Clear nội dung cũ nếu có
+    await usernameElement.evaluate(el => el.value = '');
+    await humanDelay(300, 600);
+    
+    // Nhập username từng ký tự một
+    await usernameElement.type(username, { delay: 100 });
+    await humanDelay(1000, 2000);
+    
+    // Tìm và nhập password
+    const [passwordElement] = await page.$x(passwordXpath);
+    if (!passwordElement) {
+      return false;
+    }
+    
+    // Click vào password input để focus
+    await passwordElement.click();
+    await humanDelay(500, 1000);
+    
+    // Clear nội dung cũ nếu có
+    await passwordElement.evaluate(el => el.value = '');
+    await humanDelay(300, 600);
+    
+    // Nhập password từng ký tự một
+    await passwordElement.type(password, { delay: 100 });
+    await humanDelay(1000, 2000);
+    
+    // Tìm và click login button
+    const [loginButton] = await page.$x(loginButtonXpath);
+    if (!loginButton) {
+      return false;
+    }
+    
+    // Click vào login button
+    await loginButton.click();
+    await humanDelay(2000, 4000);
+    
+    return true;
   }
 
   /**
