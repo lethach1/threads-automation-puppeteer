@@ -9,28 +9,23 @@ src/
 ├── config/
 │   └── constants.js          # Application constants and configurations
 ├── controllers/
-│   └── AutomationController.js # Main automation orchestration
-├── models/
-│   └── Profile.js            # Profile data model
+│   └── AutomationController.ts # Main automation orchestration
 ├── services/
-│   ├── ProfileService.js     # Profile management
-│   ├── CookieService.js      # Cookie handling
-│   ├── AntiDetectService.js  # Browser fingerprinting
+│   ├── ProfileService.ts     # Profile management and browser connection
 │   └── AuthenticationService.js # Login management
 ├── utils/
-│   ├── fileUtils.js          # File operations
 │   └── browserUtils.js       # Browser utilities
 ├── human-behavior.js         # Human behavior simulation
-└── main.js                   # Entry point
+└── main.ts                   # Entry point
 ```
 
 ## 🚀 Features
 
 - **Multi-account support** - Run automation for multiple profiles
 - **Human behavior simulation** - Realistic mouse movements and typing
-- **Anti-detect measures** - Stealth plugin, proxy support, fingerprint spoofing
-- **Auto login** - Automatic credential management
-- **Cookie persistence** - Save and restore session cookies
+- **Profile management** - Automatic profile detection and loading
+- **Browser automation** - Connect to existing Chrome instances via API
+- **TypeScript support** - Modern development with type safety
 - **Modular architecture** - Clean separation of concerns
 
 ## 📦 Installation
@@ -43,37 +38,28 @@ npm install
 
 ### Profile Setup
 
-Create profile directories in `profiles/`:
+The system automatically detects profiles in the `profiles/` directory:
 
 ```
 profiles/
-├── acc1/
-│   ├── cookies.json          # Session cookies (auto-generated)
-│   └── proxy.json           # Profile configuration
-├── acc2/
-│   ├── cookies.json
-│   └── proxy.json
-└── ...
+├── profile 5_68b02d669ceba9e5857793b9/
+│   ├── 68b02d669ceba9e5857793b9/     # Chrome profile data
+│   ├── note.txt
+│   ├── proxy.txt
+│   └── version.txt
+├── profile 6_68b129b8fe3431396321dcd5/
+│   └── ...
+└── profile 7_68b129bae4a5b50271d1f7b6/
+    └── ...
 ```
 
-### Proxy Configuration
+### API Server Setup
 
-Example `profiles/acc1/proxy.json`:
+The automation connects to a local API server on port `36969` that manages Chrome instances:
 
-```json
-{
-  "server": "http://your-proxy-server:port",
-  "username": "proxy-username",
-  "password": "proxy-password",
-  "threads_username": "your-threads-username",
-  "threads_password": "your-threads-password",
-  "lang": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
-  "timezone": "Asia/Ho_Chi_Minh",
-  "latitude": 10.7769,
-  "longitude": 106.7009,
-  "accuracy": 20
-}
-```
+- **API Endpoint**: `http://localhost:36969/start`
+- **Parameters**: `path`, `version`, `os`
+- **Response**: `debuggerAddress` for Puppeteer connection
 
 ## 🎯 Usage
 
@@ -91,8 +77,8 @@ npm run dev
 
 ### Programmatic Usage
 
-```javascript
-import { AutomationController } from './src/main.js';
+```typescript
+import { AutomationController } from './src/main.ts';
 
 const controller = new AutomationController();
 await controller.runMultiAccountAutomation();
@@ -102,40 +88,35 @@ await controller.runMultiAccountAutomation();
 
 ### Services
 
-- **ProfileService**: Manages profile loading and configuration
-- **CookieService**: Handles cookie persistence and validation
-- **AntiDetectService**: Manages browser fingerprinting and stealth
+- **ProfileService**: Manages profile loading and browser connection via API
 - **AuthenticationService**: Handles login and session management
-
-### Models
-
-- **Profile**: Encapsulates profile data with validation methods
 
 ### Controllers
 
 - **AutomationController**: Orchestrates the entire automation process
 
-## 🛡️ Anti-Detect Features
+## 🛡️ Features
 
-- **Stealth Plugin**: Hides automation signatures
-- **Proxy Support**: IP rotation and geolocation spoofing
 - **Human Behavior**: Realistic mouse movements and typing patterns
-- **Fingerprint Spoofing**: Timezone, language, and geolocation manipulation
-- **WebRTC Protection**: Prevents IP leakage through WebRTC
+- **Profile Isolation**: Each profile uses a separate Chrome instance
+- **API Integration**: Connects to external Chrome management API
+- **TypeScript**: Modern development with type safety
+- **Error Handling**: Graceful error handling and recovery
 
 ## 📝 Notes
 
 - Each profile uses a separate Chrome user data directory
-- Cookies are automatically saved and restored
 - Human behavior simulation prevents detection
-- Supports both proxy and direct connections
+- Requires external API server for Chrome management
+- Profiles are automatically detected from the `profiles/` directory
 
 ## 🤝 Contributing
 
 1. Follow the modular architecture
 2. Add proper error handling
-3. Use ES modules syntax
+3. Use TypeScript for new files
 4. Maintain separation of concerns
+5. Use ES modules syntax
 
 ## 📄 License
 

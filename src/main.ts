@@ -25,7 +25,7 @@ async function main() {
 }
 
 // Chạy automation nếu là main module
-if (process.argv[1] && process.argv[1].endsWith('main.js')) {
+if (process.argv[1] && (process.argv[1].endsWith('main.js') || process.argv[1].endsWith('main.ts'))) {
   console.log('🎯 Main module detected, starting automation...');
   main().catch(error => {
     console.error('💥 Unhandled error in main:', error);

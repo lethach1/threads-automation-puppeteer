@@ -1,43 +1,35 @@
-import puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { humanDelay, humanScroll, humanHover, humanClick, humanTypeWithMistakes } from '../human-behavior.js';
 import { THREADS_URL, TIMEOUTS, SELECTORS } from '../config/constants.js';
-import { ProfileService } from '../services/ProfileService.js';
-import { AntiDetectService } from '../services/AntiDetectService.js';
+import { startProfile, getProfilePaths } from '../services/ProfileService.ts';
 import { AuthenticationService } from '../services/AuthenticationService.js';
+import { Browser, Page } from 'puppeteer-core';
 
-// Thêm stealth plugin
-puppeteer.use(StealthPlugin());
 
 /**
  * Automation Controller - Điều khiển chính automation
  */
 export class AutomationController {
-  constructor() {
-    this.profileService = new ProfileService();
-    this.profiles = [];
-  }
-
-  /**
-   * Chạy automation cho một profile
-   * @param {import('../models/Profile.js').Profile} profile
-   * @param {number} index
-   */
+  private profiles: any[] = []; // Add this property
+  
   async runProfileAutomation(profile, index) {
     console.log(`👤 Starting automation for profile: ${profile.name} (${index + 1}/${this.profiles.length})`);
-    let browser = null;
-    let page = null;
+    
+    let browser: Browser | null = null
 
     try {
-      // Tạo launch options
-      const launchOptions = await AntiDetectService.createLaunchOptions(profile);
+      // Start profile 
+      const startedBrowser = await startProfile(profile.path);
       
-      // Launch browser
-      browser = await puppeteer.launch(launchOptions);
-      page = await AntiDetectService.createConfiguredPage(browser, profile);
+      if (!startedBrowser) {
+        throw new Error(`Failed to start profile: ${profile.name}`);
+      }
 
-      // Load cookies
-      await AuthenticationService.loadCookiesToPage(page, profile.cookiesPath);
+      browser = startedBrowser;
+
+      const page = await browser.newPage();
+
+      await page.goto("https://iphey.com", { waitUntil: "networkidle2" });
+      await new Promise(resolve => setTimeout(resolve, 6000));
 
       // Điều hướng đến Threads
       await page.goto(THREADS_URL, {
@@ -60,7 +52,8 @@ export class AutomationController {
       const postXpath = '/html/body/div[3]/div/div/div[2]/div[2]/div/div/div/div[1]/div[1]/div[1]/div/div/div[2]/div[1]/div[2]/div/div[1]/span';
       const contentPostXpath = '/html/body/div[3]/div/div/div[3]/div/div/div[1]/div/div[2]/div/div/div/div[2]/div/div/div/div/div/div[2]/div/div/div[1]/div[2]/div[2]/div[1]/p';
 
-      const [postElement] = await page.$x(postXpath);
+      const [postElement] = await (page as any).$x(postXpath);
+            
       await postElement.click();
       await humanDelay(2000, 4000);
       await humanTypeWithMistakes(page, contentPostXpath, 'Hello, world!');
@@ -73,9 +66,7 @@ export class AutomationController {
       // Đợi một chút trước khi đóng
       await humanDelay(2000, 4000);
 
-      // Refresh cookies nếu còn đăng nhập
-      await AuthenticationService.refreshCookiesIfAuthenticated(page, profile.cookiesPath);
-
+ 
     } catch (error) {
       // Handle error silently
     } finally {
@@ -87,7 +78,6 @@ export class AutomationController {
   }
 
   
-
   /**
    * Đăng nhập với username và password
    * @param {import('puppeteer').Page} page
@@ -151,11 +141,7 @@ export class AutomationController {
     return true;
   }
 
-  /**
-   * Thực hiện các hành động giống người dùng thật
-   * @param {import('puppeteer').Page} page
-   * @param {string} profileName
-   */
+  
   async performHumanActions(page, profileName) {
     try {
       // Scroll xuống để xem feed
@@ -217,29 +203,20 @@ export class AutomationController {
    */
   async runMultiAccountAutomation() {
     // Load cấu hình profiles
-    this.profiles = await this.profileService.loadProfiles();
+    this.profiles = await getProfilePaths();
     console.log(`📊 Loaded ${this.profiles.length} profiles for automation`);
 
-    if (this.profiles.length === 0) {
-      console.log('⚠️ No profiles found. Please check your profiles directory.');
-      return;
-    }
-
     for (let i = 0; i < this.profiles.length; i++) {
-      const profile = this.profiles[i];
-      console.log(`🔄 Processing profile ${i + 1}/${this.profiles.length}: ${profile.name}`);
+      const profilePath = this.profiles[i];
+      const profileName = profilePath.split('\\').pop() || `Profile ${i + 1}`;
+      console.log(`🔄 Processing profile ${i + 1}/${this.profiles.length}: ${profileName}`);
 
       try {
-        await this.runProfileAutomation(profile, i);
-        console.log(`✅ Completed profile: ${profile.name}`);
+        await this.runProfileAutomation({ path: profilePath, name: profileName }, i);
+        console.log(`✅ Completed profile: ${profileName}`);
 
-        // Nghỉ giữa các profile để tránh bị detect
-        if (i < this.profiles.length - 1) {
-          console.log('⏳ Waiting between profiles...');
-          await humanDelay(10000, 15000);
-        }
       } catch (error) {
-        console.error(`❌ Error processing profile ${profile.name}:`, error.message);
+        console.error(`❌ Error processing profile ${profileName}:`, error.message);
         continue; // Tiếp tục với profile tiếp theo
       }
     }

@@ -75,9 +75,9 @@ Thumbs.db
 tmp/
 temp/
 
-# Profiles (ignore Chrome user data and caches)
+# Profiles folder - ignore all contents
+profiles/*/
 profiles/*/chrome-profile/
-profiles/*/chrome-profile/**
 profiles/*/chrome-cache/
-profiles/*/chrome-cache/**
 profiles/*/cookies.json.bak
+

@@ -5,10 +5,10 @@
   "type": "module",
   "main": "src/main.js",
   "scripts": {
-    "start": "node src/main.js",
-    "dev": "node --watch src/main.js",
-    "debug": "node --inspect src/main.js",
-    "debug:break": "node --inspect-brk src/main.js",
+    "start": "npx tsx src/main.ts",
+    "dev": "npx tsx --watch src/main.ts",
+    "debug": "npx tsx --inspect src/main.ts",
+    "debug:break": "npx tsx --inspect-brk src/main.ts",
     "debug:test": "node debug.js"
   },
   "keywords": [
@@ -21,7 +21,9 @@
   "license": "ISC",
   "dependencies": {
     "ghost-cursor": "^1.1.9",
+    "node-fetch": "^3.3.2",
     "puppeteer": "^24.17.0",
+    "puppeteer-core": "^24.17.1",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
