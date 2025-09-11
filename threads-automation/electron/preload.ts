@@ -22,3 +22,15 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
   // You can expose other APTs you need here.
   // ...
 })
+
+// Convenience API for directory selection in renderer
+contextBridge.exposeInMainWorld('api', {
+  selectDirectory: async (): Promise<string> => {
+    try {
+      const dir = await ipcRenderer.invoke('select-directory')
+      return typeof dir === 'string' ? dir : ''
+    } catch {
+      return ''
+    }
+  }
+})

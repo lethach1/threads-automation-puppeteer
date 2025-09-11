@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -66,3 +66,17 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(createWindow)
+
+// IPC: Open directory picker and return selected path
+ipcMain.handle('select-directory', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Select a directory',
+    properties: ['openDirectory']
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return ''
+  }
+
+  return result.filePaths[0]
+})

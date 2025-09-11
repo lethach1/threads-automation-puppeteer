@@ -20,3 +20,13 @@ electron.contextBridge.exposeInMainWorld("ipcRenderer", {
   // You can expose other APTs you need here.
   // ...
 });
+electron.contextBridge.exposeInMainWorld("api", {
+  selectDirectory: async () => {
+    try {
+      const dir = await electron.ipcRenderer.invoke("select-directory");
+      return typeof dir === "string" ? dir : "";
+    } catch {
+      return "";
+    }
+  }
+});
