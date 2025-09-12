@@ -10,9 +10,34 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
-const DatePickerAndTimePickerDemo: FC = () => {
+export type DateTimeValue = {
+  date?: Date
+  time: string
+}
+
+type Props = {
+  value: DateTimeValue
+  onChange: (value: DateTimeValue) => void
+  readOnly?: boolean
+}
+
+const DatePickerAndTimePickerDemo: FC<Props> = ({ value, onChange, readOnly = false }) => {
   const [open, setOpen] = useState(false)
-  const [date, setDate] = useState<Date | undefined>(undefined)
+
+  if (readOnly) {
+    return (
+      <div className="flex gap-12 items-start">
+        <div className="flex flex-col gap-1">
+          <span className="text-sm text-muted-foreground px-1">Date</span>
+          <span className="px-1">{value.date ? value.date.toLocaleDateString() : '-'}</span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-sm text-muted-foreground px-1">Time</span>
+          <span className="px-1">{value.time || '-'}</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex gap-4">
@@ -23,16 +48,16 @@ const DatePickerAndTimePickerDemo: FC = () => {
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <Button variant="outline" id="date-picker" className="justify-between font-normal">
-              {date ? date.toLocaleDateString() : 'Pick a date'}
+              {value.date ? value.date.toLocaleDateString() : 'Pick a date'}
               <ChevronDownIcon />
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto overflow-hidden p-0" align="start">
             <Calendar
               mode="single"
-              selected={date}
+              selected={value.date}
               onSelect={(d) => {
-                setDate(d)
+                onChange({ ...value, date: d })
                 setOpen(false)
               }}
             />
@@ -47,7 +72,8 @@ const DatePickerAndTimePickerDemo: FC = () => {
           type="time"
           id="time-picker"
           step="1"
-          defaultValue="06:30:00"
+          value={value.time}
+          onChange={(e) => onChange({ ...value, time: e.target.value })}
           className="bg-background appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
         />
       </div>

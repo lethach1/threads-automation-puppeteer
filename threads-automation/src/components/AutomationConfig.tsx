@@ -6,10 +6,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { HelpCircle } from 'lucide-react'
-import DatePickerAndTimePickerDemo from '@/components/ui/datetime-picker'
+import { HelpCircle, Plus, Trash2 } from 'lucide-react'
+import DatePickerAndTimePickerDemo, { type DateTimeValue } from '@/components/ui/datetime-picker'
 
-export default function AutomationConfig() {
+type Props = { onContinue?: () => void }
+
+export default function AutomationConfig({ onContinue }: Props) {
   const [useInputExcel, setUseInputExcel] = useState(true)
   const [writeOkStatus, setWriteOkStatus] = useState(false)
   const [filePath, setFilePath] = useState('')
@@ -22,6 +24,30 @@ export default function AutomationConfig() {
   const [windowWidth, setWindowWidth] = useState(800)
   const [windowHeight, setWindowHeight] = useState(600)
   const [scalePercent, setScalePercent] = useState(100)
+  type ScheduleItem = { id: string, value: DateTimeValue, saved: boolean }
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([])
+
+  const handleAddSchedule = () => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const initial: ScheduleItem = { id, value: { date: undefined, time: '06:30:00' }, saved: false }
+    setSchedules((prev) => [...prev, initial])
+  }
+
+  const handleChangeSchedule = (id: string, value: DateTimeValue) => {
+    setSchedules((prev) => prev.map((s) => (s.id === id ? { ...s, value } : s)))
+  }
+
+  const handleSaveSchedule = (id: string) => {
+    setSchedules((prev) => prev.map((s) => (s.id === id ? { ...s, saved: true } : s)))
+  }
+
+  const handleEditSchedule = (id: string) => {
+    setSchedules((prev) => prev.map((s) => (s.id === id ? { ...s, saved: false } : s)))
+  }
+
+  const handleDeleteSchedule = (id: string) => {
+    setSchedules((prev) => prev.filter((s) => s.id !== id))
+  }
 
   const handleFileSelect = async () => {
     if (!window?.api?.selectDirectory) {
@@ -282,16 +308,81 @@ export default function AutomationConfig() {
               </TabsContent>
 
               <TabsContent value="schedule" className="mt-6">
-                <section aria-labelledby="schedule-heading" className="space-y-6">
+                <section aria-labelledby="schedule-heading" className="space-y-4">
                   <h2 id="schedule-heading" className="text-2xl font-semibold">Schedule Configuration</h2>
-                  <DatePickerAndTimePickerDemo />
+
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      onClick={handleAddSchedule}
+                      className="h-8 w-8 rounded-full p-0 bg-blue-600 hover:bg-blue-700 text-white"
+                      aria-label="Add schedule"
+                      title="Add schedule"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                    <span className="text-sm text-muted-foreground select-none">Add schedule</span>
+                  </div>
+
+                  {schedules.length > 0 && (
+                    <div className="mt-2 space-y-4" aria-live="polite">
+                      {schedules.map((item, index) => (
+                        <div
+                          key={item.id}
+                          id={`schedule-picker-${item.id}`}
+                          role={item.saved ? 'button' : 'group'}
+                          tabIndex={item.saved ? 0 : -1}
+                          onClick={() => item.saved && handleEditSchedule(item.id)}
+                          onKeyDown={(e) => {
+                            if (!item.saved) return
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              handleEditSchedule(item.id)
+                            }
+                          }}
+                          aria-label={`Schedule ${index + 1}${item.saved ? ' (click to edit)' : ''}`}
+                          className={`rounded-md border border-border p-3 flex items-start justify-between gap-4 ${item.saved ? 'cursor-pointer hover:bg-muted/40' : ''}`}
+                        >
+                          <DatePickerAndTimePickerDemo
+                            value={item.value}
+                            onChange={(v) => handleChangeSchedule(item.id, v)}
+                            readOnly={item.saved}
+                          />
+                          {item.saved ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="ml-4 h-8 w-8 p-0"
+                              aria-label={`Delete schedule ${index + 1}`}
+                              title="Delete"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleDeleteSchedule(item.id)
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              onClick={() => handleSaveSchedule(item.id)}
+                              className="ml-auto bg-green-600 hover:bg-green-700 text-white"
+                              aria-label={`Save schedule ${index + 1}`}
+                            >
+                              Save
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </section>
               </TabsContent>
             </Tabs>
 
             {/* Continue Button */}
             <div className="flex justify-end mt-8">
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2">
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2" onClick={onContinue}>
                 Continue
               </Button>
             </div>
