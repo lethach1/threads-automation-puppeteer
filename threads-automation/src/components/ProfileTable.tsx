@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ArrowUpDown, Circle, FolderOpen } from 'lucide-react'
+import { getListProfiles } from '@/services/profileApi'
 
 type Profile = {
   id: string
@@ -17,9 +18,8 @@ type Props = {
 }
 
 export default function ProfileTable({ onBack }: Props) {
-  const [profiles] = useState<Profile[]>(() =>
-    Array.from({ length: 8 }).map((_, i) => ({ id: `p-${i + 1}`, name: `Person ${i + 1}`, location: 'Hanoi, Vietnam' }))
-  )
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [isLoading, setIsLoading] = useState(false)
   const [sortAsc, setSortAsc] = useState(true)
   const [selectedProfiles, setSelectedProfiles] = useState<Set<string>>(new Set())
   const [showCheckbox] = useState(true)
@@ -34,6 +34,22 @@ export default function ProfileTable({ onBack }: Props) {
   useEffect(() => {
     if (editingId && inputRef.current) inputRef.current.focus()
   }, [editingId])
+
+  const fetchProfiles = async () => {
+    try {
+      setIsLoading(true)
+      const api = 'http://127.0.0.1:5424/api/profiles'
+      const list = await getListProfiles(api)
+      setProfiles(list.map(p => ({ id: p.id, name: p.name, location: p.location })))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    // Load profiles when this screen mounts (after Continue from config)
+    fetchProfiles()
+  }, [])
 
   const sortedProfiles = useMemo(() => {
     const items = [...profiles]
@@ -92,6 +108,15 @@ export default function ProfileTable({ onBack }: Props) {
           <span className="text-sm text-muted-foreground">{selectedProfiles.size} of {profiles.length} selected</span>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchProfiles}
+            disabled={isLoading}
+            title="Reload profiles"
+          >
+            {isLoading ? 'Reloading...' : 'Reload'}
+          </Button>
           {selectedProfiles.size > 0 && (
             <Button 
               variant="default" 

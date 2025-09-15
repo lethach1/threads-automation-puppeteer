@@ -4,71 +4,158 @@ import { URLSearchParams } from "url";
 import { readdir } from "fs/promises";
 import { join } from "path";
 
-export async function startProfile(profilePath: string) {
 
-  // Encode giống như Python - sử dụng encodeURIComponent để encode space thành %20
-  const encodedPath = encodeURIComponent(profilePath);
-  const serverUrl = `http://localhost:36969/start?path=${encodedPath}&version=128&os=win`;
 
+// =========================
+// Backend profile opener API
+// =========================
+
+export type OpenProfileOptions = {
+  windowWidth: number
+  windowHeight: number
+  scalePercent: number
+}
+
+type OpenProfileSuccessNew = {
+  success: true
+  profileId: string
+  browserPort: number
+  wsUrl: string
+  message: string // "Profile opened successfully"
+}
+
+type OpenProfileSuccessExisting = {
+  success: true
+  message: string // "Profile already running"
+  profileId: string
+  browserPort: number
+  wsUrl: string
+}
+
+type OpenProfileFailure = { success: false; error: string }
+
+type OpenProfileResponse = OpenProfileSuccessNew | OpenProfileSuccessExisting | OpenProfileFailure
+
+const OPEN_PROFILE_API = "http://127.0.0.1:5424/api/open-profile"
+
+export type OpenedSession = {
+  profileId: string
+  wsUrl: string
+  browser: Browser
+}
+
+
+const openProfile = async (
+  profileId: string,
+  options: OpenProfileOptions
+): Promise<OpenedSession | null> => {
   try {
-    console.log("Calling API:", serverUrl);
-    
-    // Gọi API start
-    const response = await fetch(serverUrl);
-    console.log("Response status:", response.status);
-    
+    const response = await fetch(OPEN_PROFILE_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId, options })
+    })
+
     if (!response.ok) {
-      throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+      console.error("openSingleProfile: bad status", response.status, response.statusText)
+      return null
     }
 
-    const jsonData = await response.json() as { status: string; debuggerAddress?: string };
-    console.log("API Response:", jsonData);
-
-    if (jsonData.status === "success") {
-      const debuggerAddress = jsonData.debuggerAddress; // ví dụ: "127.0.0.1:9222"
-      console.log("Debugger address:", debuggerAddress);
-
-      // Kết nối puppeteer tới Chrome đang chạy
-      const browser: Browser = await puppeteer.connect({
-        browserURL: `http://${debuggerAddress}`,
-        defaultViewport: null,
-      });
-
-      console.log("Connected to browser successfully");
-
-      return browser;
-    } else {
-      console.error("API returned error status:", jsonData);
-      return null;
+    const data = (await response.json()) as OpenProfileResponse
+    if (!data.success || !("wsUrl" in data) || !data.wsUrl) {
+      console.error("openSingleProfile: backend failure", data)
+      return null
     }
-  } catch (err) {
-    console.error("Error details:", err);
-    return null;
+
+    const browser = await puppeteer.connect({ browserWSEndpoint: data.wsUrl, defaultViewport: null })
+    return { profileId, wsUrl: data.wsUrl, browser }
+  } catch (error) {
+    console.error("openSingleProfile: error", error)
+    return null
   }
+}
+
+export const openProfiles = async (
+  profileIds: string[],
+  options: OpenProfileOptions
+): Promise<OpenedSession[]> => {
+  if (profileIds.length === 0) return []
+  const results: OpenedSession[] = []
+  for (const id of profileIds) {
+    const session = await openProfile(id, options)
+    if (session) results.push(session)
+  }
+  return results
 }
 
 /**
- * Lấy danh sách địa chỉ của các profile trong folder profiles
- * @returns {Promise<string[]>} Mảng các đường dẫn profile
+ * Open multiple profiles with limited concurrency (pool pattern).
+ * Each worker opens a profile, then picks the next until queue is empty.
  */
-export async function getProfilePaths(): Promise<string[]> {
-  try {
-    const profilesDir = join(process.cwd(), 'profiles');
-    const items = await readdir(profilesDir, { withFileTypes: true });
-    
-    const profilePaths: string[] = [];
-    
-    for (const item of items) {
-      if (item.isDirectory() && item.name.startsWith('profile ')) {
-        const fullPath = join(profilesDir, item.name);
-        profilePaths.push(fullPath);
-      }
+export const openProfilesWithConcurrency = async (
+  profileIds: string[],
+  options: OpenProfileOptions,
+  concurrency: number
+): Promise<OpenedSession[]> => {
+  if (profileIds.length === 0) return []
+  const limit = Math.max(1, Math.min(concurrency, profileIds.length))
+  const results: OpenedSession[] = []
+
+  let cursor = 0
+  const workers = Array.from({ length: limit }, async () => {
+    while (cursor < profileIds.length) {
+      const index = cursor++
+      const id = profileIds[index]
+      const session = await openProfile(id, options)
+      if (session) results.push(session)
     }
-    
-    return profilePaths;
-  } catch (error) {
-    console.error('Error reading profiles directory:', error);
-    return [];
+  })
+
+  await Promise.all(workers)
+  return results
+}
+
+// =========================
+// Fetch list of profiles from backend API
+// =========================
+
+export type ProfileListItem = {
+  id: string
+  name: string
+  location?: string
+  isRunning: boolean
+}
+
+type GetProfilesSuccess = { success: true; profiles: ProfileListItem[] }
+type GetProfilesFailure = { success: false; error: string }
+
+export const getListProfiles = async (apiUrl: string): Promise<ProfileListItem[]> => {
+  try {
+    const res = await fetch(apiUrl, { method: "GET" })
+    if (!res.ok) {
+      console.error("getListProfiles: bad status", res.status, res.statusText)
+      return []
+    }
+    const data = (await res.json()) as GetProfilesSuccess | GetProfilesFailure
+    if (!data || data.success !== true || !("profiles" in data)) {
+      console.error("getListProfiles: invalid response", data)
+      return []
+    }
+    // Basic normalization and de-dup by id
+    const seen = new Set<string>()
+    const list: ProfileListItem[] = []
+    for (const p of data.profiles) {
+      if (!p?.id || seen.has(p.id)) continue
+      seen.add(p.id)
+      list.push({ id: p.id, name: p.name ?? p.id, location: p.location, isRunning: !!p.isRunning })
+    }
+    return list
+  } catch (err) {
+    console.error("getListProfiles: error", err)
+    return []
   }
 }
+
+
+
 

@@ -198,29 +198,5 @@ export class AutomationController {
     }
   }
 
-  /**
-   * Chạy automation cho tất cả profiles
-   */
-  async runMultiAccountAutomation() {
-    // Load cấu hình profiles
-    this.profiles = await getProfilePaths();
-    console.log(`📊 Loaded ${this.profiles.length} profiles for automation`);
-
-    for (let i = 0; i < this.profiles.length; i++) {
-      const profilePath = this.profiles[i];
-      const profileName = profilePath.split('\\').pop() || `Profile ${i + 1}`;
-      console.log(`🔄 Processing profile ${i + 1}/${this.profiles.length}: ${profileName}`);
-
-      try {
-        await this.runProfileAutomation({ path: profilePath, name: profileName }, i);
-        console.log(`✅ Completed profile: ${profileName}`);
-
-      } catch (error) {
-        console.error(`❌ Error processing profile ${profileName}:`, error.message);
-        continue; // Tiếp tục với profile tiếp theo
-      }
-    }
-    
-    console.log('🎉 All profiles processed!');
-  }
+  
 }
