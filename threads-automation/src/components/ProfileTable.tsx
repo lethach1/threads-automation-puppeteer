@@ -46,13 +46,27 @@ export default function ProfileTable({ onBack }: Props) {
   }, [profiles, renamedNames, sortAsc])
 
   const handleSort = () => setSortAsc((v) => !v)
-  // Removed quick add button in header
+  
+  const handleSelectAll = () => {
+    if (selectedProfiles.size === profiles.length) {
+      setSelectedProfiles(new Set())
+    } else {
+      setSelectedProfiles(new Set(profiles.map(p => p.id)))
+    }
+  }
+  
   const handleProfileSelect = (id: string) => {
     setSelectedProfiles((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
+  }
+  
+  const handleRunSelected = () => {
+    const selectedProfileIds = Array.from(selectedProfiles)
+    console.log('Running automation for profiles:', selectedProfileIds)
+    // TODO: Implement actual automation logic here
   }
   const startInlineEdit = (p: Profile) => {
     setEditingId(p.id)
@@ -71,10 +85,23 @@ export default function ProfileTable({ onBack }: Props) {
     <div className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Checkbox checked={selectedProfiles.size > 0 && selectedProfiles.size === profiles.length} onCheckedChange={() => {}} />
+          <Checkbox 
+            checked={selectedProfiles.size > 0 && selectedProfiles.size === profiles.length} 
+            onCheckedChange={handleSelectAll} 
+          />
           <span className="text-sm text-muted-foreground">{selectedProfiles.size} of {profiles.length} selected</span>
         </div>
         <div className="flex items-center gap-2">
+          {selectedProfiles.size > 0 && (
+            <Button 
+              variant="default" 
+              size="sm" 
+              onClick={handleRunSelected}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              Run
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={onBack}>Back</Button>
         </div>
       </div>

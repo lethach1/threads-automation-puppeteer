@@ -12,41 +12,92 @@ import DatePickerAndTimePickerDemo, { type DateTimeValue } from '@/components/ui
 type Props = { onContinue?: () => void }
 
 export default function AutomationConfig({ onContinue }: Props) {
-  const [useInputExcel, setUseInputExcel] = useState(true)
-  const [writeOkStatus, setWriteOkStatus] = useState(false)
-  const [filePath, setFilePath] = useState('')
-  const [sheetId, setSheetId] = useState('0')
-  const [readType, setReadType] = useState('all-rows')
   const [activeSidebar, setActiveSidebar] = useState('posts-comment')
   const [activeTab, setActiveTab] = useState('input-from-application')
-  const [okStatusColumn, setOkStatusColumn] = useState('')
-  const [numThreads, setNumThreads] = useState(5)
-  const [windowWidth, setWindowWidth] = useState(800)
-  const [windowHeight, setWindowHeight] = useState(600)
-  const [scalePercent, setScalePercent] = useState(100)
+  
+  // Separate state for each scenario
+  const [scenarios, setScenarios] = useState({
+    'posts-comment': {
+      useInputExcel: true,
+      writeOkStatus: false,
+      filePath: '',
+      sheetId: '0',
+      readType: 'all-rows',
+      okStatusColumn: '',
+      numThreads: 5,
+      windowWidth: 800,
+      windowHeight: 600,
+      scalePercent: 100,
+      schedules: [] as ScheduleItem[]
+    },
+    'login': {
+      useInputExcel: true,
+      writeOkStatus: false,
+      filePath: '',
+      sheetId: '0',
+      readType: 'all-rows',
+      okStatusColumn: '',
+      numThreads: 5,
+      windowWidth: 800,
+      windowHeight: 600,
+      scalePercent: 100,
+      schedules: [] as ScheduleItem[]
+    },
+    'interactive': {
+      useInputExcel: true,
+      writeOkStatus: false,
+      filePath: '',
+      sheetId: '0',
+      readType: 'all-rows',
+      okStatusColumn: '',
+      numThreads: 5,
+      windowWidth: 800,
+      windowHeight: 600,
+      scalePercent: 100,
+      schedules: [] as ScheduleItem[]
+    }
+  })
+  
   type ScheduleItem = { id: string, value: DateTimeValue, saved: boolean }
-  const [schedules, setSchedules] = useState<ScheduleItem[]>([])
+  
+  // Get current scenario data
+  const currentScenario = scenarios[activeSidebar as keyof typeof scenarios]
+
+  // Helper function to update scenario data
+  const updateScenario = (key: string, value: any) => {
+    setScenarios(prev => ({
+      ...prev,
+      [activeSidebar]: {
+        ...prev[activeSidebar as keyof typeof prev],
+        [key]: value
+      }
+    }))
+  }
 
   const handleAddSchedule = () => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const initial: ScheduleItem = { id, value: { date: undefined, time: '06:30:00' }, saved: false }
-    setSchedules((prev) => [...prev, initial])
+    updateScenario('schedules', [...currentScenario.schedules, initial])
   }
 
   const handleChangeSchedule = (id: string, value: DateTimeValue) => {
-    setSchedules((prev) => prev.map((s) => (s.id === id ? { ...s, value } : s)))
+    const updatedSchedules = currentScenario.schedules.map((s) => (s.id === id ? { ...s, value } : s))
+    updateScenario('schedules', updatedSchedules)
   }
 
   const handleSaveSchedule = (id: string) => {
-    setSchedules((prev) => prev.map((s) => (s.id === id ? { ...s, saved: true } : s)))
+    const updatedSchedules = currentScenario.schedules.map((s) => (s.id === id ? { ...s, saved: true } : s))
+    updateScenario('schedules', updatedSchedules)
   }
 
   const handleEditSchedule = (id: string) => {
-    setSchedules((prev) => prev.map((s) => (s.id === id ? { ...s, saved: false } : s)))
+    const updatedSchedules = currentScenario.schedules.map((s) => (s.id === id ? { ...s, saved: false } : s))
+    updateScenario('schedules', updatedSchedules)
   }
 
   const handleDeleteSchedule = (id: string) => {
-    setSchedules((prev) => prev.filter((s) => s.id !== id))
+    const updatedSchedules = currentScenario.schedules.filter((s) => s.id !== id)
+    updateScenario('schedules', updatedSchedules)
   }
 
   const handleFileSelect = async () => {
@@ -56,7 +107,7 @@ export default function AutomationConfig({ onContinue }: Props) {
     }
     const selectedDir = await window.api.selectDirectory()
     if (!selectedDir) return
-    setFilePath(selectedDir)
+    updateScenario('filePath', selectedDir)
   }
 
   const sidebarItems = [
@@ -108,12 +159,12 @@ export default function AutomationConfig({ onContinue }: Props) {
                     Input from application
                   </h2>
                     {/* Use input Excel option */}
-                    <div className="flex items-center space-x-3">
-                      <Checkbox 
-                        id="use-input-excel" 
-                        checked={useInputExcel}
-                        onCheckedChange={(checked) => setUseInputExcel(checked === true)}
-                      />
+                     <div className="flex items-center space-x-3">
+                       <Checkbox 
+                         id="use-input-excel" 
+                         checked={currentScenario.useInputExcel}
+                         onCheckedChange={(checked) => updateScenario('useInputExcel', checked === true)}
+                       />
                       <div className="flex items-center space-x-2">
                         <Label 
                           htmlFor="use-input-excel" 
@@ -125,16 +176,16 @@ export default function AutomationConfig({ onContinue }: Props) {
                       </div>
                     </div>
 
-                    {useInputExcel && (
-                      <div className="space-y-6" aria-live="polite" aria-expanded={useInputExcel}>
+                     {currentScenario.useInputExcel && (
+                      <div className="space-y-6" aria-live="polite" aria-expanded={currentScenario.useInputExcel}>
                         {/* File input field */}
                         <div className="space-y-2">
                           <div className="flex items-center space-x-2">
                             <Input
                               type="text"
                               placeholder="Select a directory..."
-                              value={filePath}
-                              onChange={(e) => setFilePath(e.target.value)}
+                              value={currentScenario.filePath}
+                              onChange={(e) => updateScenario('filePath', e.target.value)}
                               className="flex-1"
                               aria-label="Selected directory path"
                             />
@@ -158,8 +209,8 @@ export default function AutomationConfig({ onContinue }: Props) {
                             <Input
                               id="sheet-id"
                               type="text"
-                              value={sheetId}
-                              onChange={(e) => setSheetId(e.target.value)}
+                              value={currentScenario.sheetId}
+                              onChange={(e) => updateScenario('sheetId', e.target.value)}
                               placeholder="0"
                             />
                           </div>
@@ -168,7 +219,7 @@ export default function AutomationConfig({ onContinue }: Props) {
                             <Label htmlFor="read-type" className="text-sm font-medium">
                               Read Type
                             </Label>
-                            <Select value={readType} onValueChange={setReadType}>
+                            <Select value={currentScenario.readType} onValueChange={(value) => updateScenario('readType', value)}>
                               <SelectTrigger>
                                 <SelectValue placeholder="Select read type" />
                               </SelectTrigger>
@@ -182,12 +233,12 @@ export default function AutomationConfig({ onContinue }: Props) {
                         </div>
 
                         {/* Write OK status option */}
-                        <div className="flex items-center space-x-3">
-                          <Checkbox 
-                            id="write-ok-status" 
-                            checked={writeOkStatus}
-                            onCheckedChange={(checked) => setWriteOkStatus(checked === true)}
-                          />
+                         <div className="flex items-center space-x-3">
+                           <Checkbox 
+                             id="write-ok-status" 
+                             checked={currentScenario.writeOkStatus}
+                             onCheckedChange={(checked) => updateScenario('writeOkStatus', checked === true)}
+                           />
                           <Label 
                             htmlFor="write-ok-status" 
                             className="text-base font-normal"
@@ -197,8 +248,8 @@ export default function AutomationConfig({ onContinue }: Props) {
                           <div className="ml-auto">
                             <Input
                               type="text"
-                              value={okStatusColumn}
-                              onChange={(e) => setOkStatusColumn(e.target.value)}
+                              value={currentScenario.okStatusColumn}
+                              onChange={(e) => updateScenario('okStatusColumn', e.target.value)}
                               placeholder="Column (e.g., Z)"
                               className="w-28 h-8 text-sm"
                               aria-label="OK status column"
@@ -221,21 +272,21 @@ export default function AutomationConfig({ onContinue }: Props) {
                         <Label htmlFor="num-threads" className="text-sm font-medium">Number of Threads</Label>
                         <HelpCircle className="h-4 w-4 text-muted-foreground" />
                       </div>
-                      <Input
-                        id="num-threads"
-                        type="number"
-                        inputMode="numeric"
-                        min={1}
-                        step={1}
-                        value={numThreads}
-                        onChange={(e) => {
-                          const n = Number(e.target.value)
-                          if (Number.isNaN(n)) return
-                          setNumThreads(Math.max(1, Math.floor(n)))
-                        }}
-                        aria-label="Number of threads"
-                        className="w-20 h-8 text-sm"
-                      />
+                       <Input
+                         id="num-threads"
+                         type="number"
+                         inputMode="numeric"
+                         min={1}
+                         step={1}
+                         value={currentScenario.numThreads}
+                         onChange={(e) => {
+                           const n = Number(e.target.value)
+                           if (Number.isNaN(n)) return
+                           updateScenario('numThreads', Math.max(1, Math.floor(n)))
+                         }}
+                         aria-label="Number of threads"
+                         className="w-20 h-8 text-sm"
+                       />
                     </div>
 
                     {/* Window Size */}
@@ -251,11 +302,11 @@ export default function AutomationConfig({ onContinue }: Props) {
                           inputMode="numeric"
                           min={100}
                           step={10}
-                          value={windowWidth}
+                          value={currentScenario.windowWidth}
                           onChange={(e) => {
                             const n = Number(e.target.value)
                             if (Number.isNaN(n)) return
-                            setWindowWidth(Math.max(100, Math.floor(n)))
+                            updateScenario('windowWidth', Math.max(100, Math.floor(n)))
                           }}
                           aria-label="Window width"
                           className="w-20 h-8 text-sm"
@@ -267,11 +318,11 @@ export default function AutomationConfig({ onContinue }: Props) {
                           inputMode="numeric"
                           min={100}
                           step={10}
-                          value={windowHeight}
+                          value={currentScenario.windowHeight}
                           onChange={(e) => {
                             const n = Number(e.target.value)
                             if (Number.isNaN(n)) return
-                            setWindowHeight(Math.max(100, Math.floor(n)))
+                            updateScenario('windowHeight', Math.max(100, Math.floor(n)))
                           }}
                           aria-label="Window height"
                           className="w-20 h-8 text-sm"
@@ -292,12 +343,12 @@ export default function AutomationConfig({ onContinue }: Props) {
                         min={50}
                         max={200}
                         step={1}
-                        value={scalePercent}
+                        value={currentScenario.scalePercent}
                         onChange={(e) => {
                           const n = Number(e.target.value)
                           if (Number.isNaN(n)) return
                           const clamped = Math.min(200, Math.max(50, Math.floor(n)))
-                          setScalePercent(clamped)
+                          updateScenario('scalePercent', clamped)
                         }}
                         aria-label="Scale percentage"
                         className="w-20 h-8 text-sm"
@@ -324,9 +375,9 @@ export default function AutomationConfig({ onContinue }: Props) {
                     <span className="text-sm text-muted-foreground select-none">Add schedule</span>
                   </div>
 
-                  {schedules.length > 0 && (
+                   {currentScenario.schedules.length > 0 && (
                     <div className="mt-2 space-y-4" aria-live="polite">
-                      {schedules.map((item, index) => (
+                      {currentScenario.schedules.map((item, index) => (
                         <div
                           key={item.id}
                           id={`schedule-picker-${item.id}`}
