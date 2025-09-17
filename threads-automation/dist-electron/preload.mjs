@@ -30,3 +30,15 @@ electron.contextBridge.exposeInMainWorld("api", {
     }
   }
 });
+electron.contextBridge.exposeInMainWorld("automationApi", {
+  runOpenProfiles: async (payload) => {
+    try {
+      return await electron.ipcRenderer.invoke("run-open-profiles", payload);
+    } catch (error) {
+      return {
+        success: false,
+        error: (error == null ? void 0 : error.message) || "Unknown error"
+      };
+    }
+  }
+});

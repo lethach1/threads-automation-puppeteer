@@ -3,6 +3,8 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 createRequire(import.meta.url);
+process.env.WS_NO_BUFFER_UTIL = "1";
+process.env.WS_NO_UTF_8_VALIDATE = "1";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -51,6 +53,62 @@ ipcMain.handle("select-directory", async () => {
     return "";
   }
   return result.filePaths[0];
+});
+const OPEN_PROFILE_API = "http://127.0.0.1:5424/api/open-profile";
+async function openOneProfile(profileId, options) {
+  const res = await fetch(OPEN_PROFILE_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profileId, options })
+  });
+  if (!res.ok) throw new Error(`bad status ${res.status}`);
+  const data = await res.json();
+  if (!data || data.success !== true) throw new Error((data == null ? void 0 : data.error) || "open failed");
+  return { profileId };
+}
+async function openProfilesWithPool(profileIds, options, concurrency) {
+  const limit = Math.max(1, Math.min(concurrency, profileIds.length));
+  const results = [];
+  let cursor = 0;
+  const workers = Array.from({ length: limit }, async () => {
+    while (cursor < profileIds.length) {
+      const index = cursor++;
+      const id = profileIds[index];
+      try {
+        const r = await openOneProfile(id, options);
+        results.push(r);
+      } catch (e) {
+        console.error("open profile failed", id, e);
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+ipcMain.handle("run-open-profiles", async (event, payload) => {
+  try {
+    const { profileIds, windowWidth, windowHeight, scalePercent, concurrency } = payload;
+    if (!Array.isArray(profileIds) || profileIds.length === 0) {
+      return {
+        success: false,
+        error: "profileIds is required and must be a non-empty array"
+      };
+    }
+    const options = {
+      windowWidth: Number(windowWidth) || 800,
+      windowHeight: Number(windowHeight) || 600,
+      scalePercent: Number(scalePercent) || 100
+    };
+    const concurrencyLimit = Math.max(1, Math.floor(Number(concurrency) || 1));
+    const opened = await openProfilesWithPool(profileIds, options, concurrencyLimit);
+    return { success: true, opened };
+  } catch (error) {
+    console.error("Error in run-open-profiles:", error);
+    return {
+      success: false,
+      error: (error == null ? void 0 : error.message) || "Unknown error"
+    };
+  }
 });
 export {
   MAIN_DIST,

@@ -2,8 +2,16 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+// IMPORTANT: Avoid importing modules that pull puppeteer/ws to prevent bufferutil issues
+type OpenProfileOptions = { windowWidth: number; windowHeight: number; scalePercent: number }
 
+// Use require for external modules after env flags are set
 const require = createRequire(import.meta.url)
+
+// Hint ws to skip optional native deps to avoid bundler resolution issues
+process.env.WS_NO_BUFFER_UTIL = '1'
+process.env.WS_NO_UTF_8_VALIDATE = '1'
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // The built directory structure
@@ -83,4 +91,69 @@ ipcMain.handle('select-directory', async () => {
   }
 
   return result.filePaths[0]
+})
+
+// Simple pool to open profiles by calling the profile manager API directly (no puppeteer connect)
+const OPEN_PROFILE_API = 'http://127.0.0.1:5424/api/open-profile'
+
+async function openOneProfile(profileId: string, options: OpenProfileOptions) {
+  const res = await fetch(OPEN_PROFILE_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profileId, options })
+  })
+  if (!res.ok) throw new Error(`bad status ${res.status}`)
+  const data = await res.json()
+  if (!data || data.success !== true) throw new Error(data?.error || 'open failed')
+  return { profileId }
+}
+
+async function openProfilesWithPool(profileIds: string[], options: OpenProfileOptions, concurrency: number) {
+  const limit = Math.max(1, Math.min(concurrency, profileIds.length))
+  const results: { profileId: string }[] = []
+  let cursor = 0
+  const workers = Array.from({ length: limit }, async () => {
+    while (cursor < profileIds.length) {
+      const index = cursor++
+      const id = profileIds[index]
+      try {
+        const r = await openOneProfile(id, options)
+        results.push(r)
+      } catch (e) {
+        console.error('open profile failed', id, e)
+      }
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
+// IPC: Run open profiles with concurrency (no puppeteer dependency)
+ipcMain.handle('run-open-profiles', async (event, payload) => {
+  try {
+    const { profileIds, windowWidth, windowHeight, scalePercent, concurrency } = payload
+
+    if (!Array.isArray(profileIds) || profileIds.length === 0) {
+      return {
+        success: false,
+        error: 'profileIds is required and must be a non-empty array'
+      }
+    }
+
+    const options: OpenProfileOptions = {
+      windowWidth: Number(windowWidth) || 800,
+      windowHeight: Number(windowHeight) || 600,
+      scalePercent: Number(scalePercent) || 100
+    }
+    
+    const concurrencyLimit = Math.max(1, Math.floor(Number(concurrency) || 1))
+    const opened = await openProfilesWithPool(profileIds, options, concurrencyLimit)
+    return { success: true, opened }
+  } catch (error: any) {
+    console.error('Error in run-open-profiles:', error)
+    return {
+      success: false,
+      error: error?.message || 'Unknown error'
+    }
+  }
 })

@@ -34,3 +34,23 @@ contextBridge.exposeInMainWorld('api', {
     }
   }
 })
+
+// Automation API for running profiles
+contextBridge.exposeInMainWorld('automationApi', {
+  runOpenProfiles: async (payload: {
+    profileIds: string[]
+    windowWidth?: number
+    windowHeight?: number
+    scalePercent?: number
+    concurrency?: number
+  }) => {
+    try {
+      return await ipcRenderer.invoke('run-open-profiles', payload)
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error?.message || 'Unknown error'
+      }
+    }
+  }
+})

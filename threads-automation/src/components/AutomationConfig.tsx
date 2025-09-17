@@ -9,7 +9,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { HelpCircle, Plus, Trash2 } from 'lucide-react'
 import DatePickerAndTimePickerDemo, { type DateTimeValue } from '@/components/ui/datetime-picker'
 
-type Props = { onContinue?: () => void }
+type Props = { 
+  onContinue?: (config: {
+    windowWidth: number
+    windowHeight: number
+    scalePercent: number
+    numThreads: number
+  }) => void 
+}
 
 export default function AutomationConfig({ onContinue }: Props) {
   const [activeSidebar, setActiveSidebar] = useState('posts-comment')
@@ -433,7 +440,18 @@ export default function AutomationConfig({ onContinue }: Props) {
 
             {/* Continue Button */}
             <div className="flex justify-end mt-8">
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2" onClick={onContinue}>
+              <Button 
+                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2" 
+                onClick={() => {
+                  const config = {
+                    windowWidth: currentScenario.windowWidth,
+                    windowHeight: currentScenario.windowHeight,
+                    scalePercent: currentScenario.scalePercent,
+                    numThreads: currentScenario.numThreads
+                  }
+                  onContinue?.(config)
+                }}
+              >
                 Continue
               </Button>
             </div>

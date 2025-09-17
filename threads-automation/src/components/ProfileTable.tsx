@@ -15,9 +15,15 @@ type Profile = {
 
 type Props = {
   onBack?: () => void
+  settings?: {
+    windowWidth: number
+    windowHeight: number
+    scalePercent: number
+    numThreads: number
+  }
 }
 
-export default function ProfileTable({ onBack }: Props) {
+export default function ProfileTable({ onBack, settings }: Props) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [sortAsc, setSortAsc] = useState(true)
@@ -79,10 +85,37 @@ export default function ProfileTable({ onBack }: Props) {
     })
   }
   
-  const handleRunSelected = () => {
+  const handleRunSelected = async () => {
     const selectedProfileIds = Array.from(selectedProfiles)
-    console.log('Running automation for profiles:', selectedProfileIds)
-    // TODO: Implement actual automation logic here
+    if (selectedProfileIds.length === 0) return
+    
+    try {
+      // Check if Electron API is available
+      if (!window.automationApi) {
+        console.error('Automation API not available - make sure preload script is loaded')
+        return
+      }
+
+      // Use settings from AutomationConfig or fallback to defaults
+      const payload = {
+        profileIds: selectedProfileIds,
+        windowWidth: settings?.windowWidth || 800,
+        windowHeight: settings?.windowHeight || 600,
+        scalePercent: settings?.scalePercent || 100,
+        concurrency: Math.min(settings?.numThreads || 3, selectedProfileIds.length)
+      }
+
+      const result = await window.automationApi.runOpenProfiles(payload)
+      console.log('Run selected result:', result)
+      
+      if (result.success) {
+        console.log(`Successfully opened ${result.opened?.length || 0} profiles`)
+      } else {
+        console.error('Failed to open profiles:', result.error)
+      }
+    } catch (err) {
+      console.error('Run selected: error', err)
+    }
   }
   const startInlineEdit = (p: Profile) => {
     setEditingId(p.id)

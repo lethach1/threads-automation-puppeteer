@@ -18,6 +18,19 @@ export default defineConfig({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
+        // Ensure optional native deps from ws (bufferutil, utf-8-validate) are not bundled
+        rollupOptions: {
+          external: [
+            'ws', 
+            'bufferutil', 
+            'utf-8-validate',
+            'puppeteer-core',
+            'node-fetch',
+            'url',
+            'fs/promises',
+            'path'
+          ]
+        }
       },
       preload: {
         // Shortcut of `build.rollupOptions.input`.

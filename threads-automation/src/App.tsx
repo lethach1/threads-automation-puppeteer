@@ -3,20 +3,41 @@ import AutomationConfig from './components/AutomationConfig'
 import ProfileTable from './components/ProfileTable'
 import './App.css'
 
+type AutomationSettings = {
+  windowWidth: number
+  windowHeight: number
+  scalePercent: number
+  numThreads: number
+}
+
 function App() {
   const [view, setView] = useState<'config' | 'profiles'>('config')
+  const [settings, setSettings] = useState<AutomationSettings>({
+    windowWidth: 800,
+    windowHeight: 600,
+    scalePercent: 100,
+    numThreads: 5
+  })
 
   if (view === 'profiles') {
     return (
       <div className="min-h-screen bg-background">
-        <ProfileTable onBack={() => setView('config')} />
+        <ProfileTable 
+          onBack={() => setView('config')} 
+          settings={settings}
+        />
       </div>
     )
   }
 
   return (
     <div className="min-h-screen bg-background">
-      <AutomationConfig onContinue={() => setView('profiles')} />
+      <AutomationConfig 
+        onContinue={(config) => {
+          setSettings(config)
+          setView('profiles')
+        }} 
+      />
     </div>
   )
 }
