@@ -3,6 +3,7 @@ export type ProfileListItem = {
   name: string
   location?: string
   isRunning: boolean
+  isCompleted?: boolean
 }
 
 type GetProfilesSuccess = { success: true; profiles: ProfileListItem[] }
@@ -23,7 +24,13 @@ export const getListProfiles = async (apiUrl: string): Promise<ProfileListItem[]
     // Keep all rows as returned by API (no de-dup), preserving order
     return (data.profiles || [])
       .filter(p => !!p?.id)
-      .map(p => ({ id: p.id, name: p.name ?? p.id, location: p.location, isRunning: !!p.isRunning }))
+      .map(p => ({
+        id: p.id,
+        name: p.name ?? p.id,
+        location: p.location,
+        isRunning: !!p.isRunning,
+        isCompleted: (p as any).isCompleted === true
+      }))
   } catch (err) {
     console.error('getListProfiles: error', err)
     return []

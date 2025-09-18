@@ -57,10 +57,10 @@ export default function AutomationConfig({ onContinue }: Props) {
       sheetId: '0',
       readType: 'all-rows',
       okStatusColumn: '',
-      numThreads: 5,
-      windowWidth: 800,
-      windowHeight: 600,
-      scalePercent: 100,
+      numThreads: '5',
+      windowWidth: '800',
+      windowHeight: '600',
+      scalePercent: '100',
       schedules: [] as ScheduleItem[]
     }
   })
@@ -281,16 +281,10 @@ export default function AutomationConfig({ onContinue }: Props) {
                       </div>
                        <Input
                          id="num-threads"
-                         type="number"
+                         type="text"
                          inputMode="numeric"
-                         min={1}
-                         step={1}
                          value={currentScenario.numThreads}
-                         onChange={(e) => {
-                           const n = Number(e.target.value)
-                           if (Number.isNaN(n)) return
-                           updateScenario('numThreads', Math.max(1, Math.floor(n)))
-                         }}
+                         onChange={(e) => updateScenario('numThreads', e.target.value)}
                          aria-label="Number of threads"
                          className="w-20 h-8 text-sm"
                        />
@@ -305,32 +299,20 @@ export default function AutomationConfig({ onContinue }: Props) {
                       <div className="flex items-center gap-3">
                         <Input
                           id="window-width"
-                          type="number"
+                          type="text"
                           inputMode="numeric"
-                          min={100}
-                          step={10}
                           value={currentScenario.windowWidth}
-                          onChange={(e) => {
-                            const n = Number(e.target.value)
-                            if (Number.isNaN(n)) return
-                            updateScenario('windowWidth', Math.max(100, Math.floor(n)))
-                          }}
+                          onChange={(e) => updateScenario('windowWidth', e.target.value)}
                           aria-label="Window width"
                           className="w-20 h-8 text-sm"
                         />
                         <span className="text-muted-foreground select-none">x</span>
                         <Input
                           id="window-height"
-                          type="number"
+                          type="text"
                           inputMode="numeric"
-                          min={100}
-                          step={10}
                           value={currentScenario.windowHeight}
-                          onChange={(e) => {
-                            const n = Number(e.target.value)
-                            if (Number.isNaN(n)) return
-                            updateScenario('windowHeight', Math.max(100, Math.floor(n)))
-                          }}
+                          onChange={(e) => updateScenario('windowHeight', e.target.value)}
                           aria-label="Window height"
                           className="w-20 h-8 text-sm"
                         />
@@ -345,18 +327,10 @@ export default function AutomationConfig({ onContinue }: Props) {
                       </div>
                       <Input
                         id="scale-percent"
-                        type="number"
+                        type="text"
                         inputMode="numeric"
-                        min={50}
-                        max={200}
-                        step={1}
                         value={currentScenario.scalePercent}
-                        onChange={(e) => {
-                          const n = Number(e.target.value)
-                          if (Number.isNaN(n)) return
-                          const clamped = Math.min(200, Math.max(50, Math.floor(n)))
-                          updateScenario('scalePercent', clamped)
-                        }}
+                        onChange={(e) => updateScenario('scalePercent', e.target.value)}
                         aria-label="Scale percentage"
                         className="w-20 h-8 text-sm"
                       />
@@ -441,13 +415,23 @@ export default function AutomationConfig({ onContinue }: Props) {
             {/* Continue Button */}
             <div className="flex justify-end mt-8">
               <Button 
+                type="button"
                 className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2" 
                 onClick={() => {
+                  const toInt = (v: unknown, fallback: number) => {
+                    const s = String(v ?? '')
+                    const n = parseInt(s.replace(/\D+/g, ''), 10)
+                    return Number.isFinite(n) ? n : fallback
+                  }
+                  const width = toInt(currentScenario.windowWidth, 800)
+                  const height = toInt(currentScenario.windowHeight, 600)
+                  const scale = toInt(currentScenario.scalePercent, 100)
+                  const threads = toInt(currentScenario.numThreads, 5)
                   const config = {
-                    windowWidth: currentScenario.windowWidth,
-                    windowHeight: currentScenario.windowHeight,
-                    scalePercent: currentScenario.scalePercent,
-                    numThreads: currentScenario.numThreads
+                    windowWidth: Math.max(100, width),
+                    windowHeight: Math.max(100, height),
+                    scalePercent: Math.min(200, Math.max(10, scale)),
+                    numThreads: Math.max(1, threads)
                   }
                   onContinue?.(config)
                 }}

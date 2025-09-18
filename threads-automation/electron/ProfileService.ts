@@ -9,6 +9,7 @@ export type ProfileListItem = {
   name: string
   location?: string
   isRunning: boolean
+  isCompleted?: boolean
 }
 
 type GetProfilesSuccess = { success: true; profiles: ProfileListItem[] }
@@ -32,7 +33,7 @@ export const getListProfiles = async (apiUrl: string): Promise<ProfileListItem[]
     for (const p of data.profiles) {
       if (!p?.id || seen.has(p.id)) continue
       seen.add(p.id)
-      list.push({ id: p.id, name: p.name ?? p.id, location: p.location, isRunning: !!p.isRunning })
+      list.push({ id: p.id, name: p.name ?? p.id, location: p.location, isRunning: !!p.isRunning, isCompleted: (p as any).isCompleted === true })
     }
     return list
   } catch (err) {

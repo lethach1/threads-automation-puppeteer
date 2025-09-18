@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ArrowUpDown, Circle, FolderOpen } from 'lucide-react'
+import { ArrowUpDown, FolderOpen } from 'lucide-react'
 import { getListProfiles } from '@/services/profileApi'
 
 type Profile = {
@@ -11,6 +11,7 @@ type Profile = {
   displayName?: string
   notes?: string
   location?: string
+  isCompleted?: boolean
 }
 
 type Props = {
@@ -29,13 +30,12 @@ export default function ProfileTable({ onBack, settings }: Props) {
   const [sortAsc, setSortAsc] = useState(true)
   const [selectedProfiles, setSelectedProfiles] = useState<Set<string>>(new Set())
   const [showCheckbox] = useState(true)
-  const [runningProfiles] = useState<Set<string>>(new Set())
   const [proxyActive] = useState<boolean | null>(null)
+  const [completedProfiles, setCompletedProfiles] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
   const [renamedNames, setRenamedNames] = useState<Map<string, string>>(new Map())
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const profileStates = new Map<string, { state: 'error' | 'launching' | 'ready'; error?: string }>()
 
   useEffect(() => {
     if (editingId && inputRef.current) inputRef.current.focus()
@@ -46,7 +46,7 @@ export default function ProfileTable({ onBack, settings }: Props) {
       setIsLoading(true)
       const api = 'http://127.0.0.1:5424/api/profiles'
       const list = await getListProfiles(api)
-      setProfiles(list.map(p => ({ id: p.id, name: p.name, location: p.location })))
+      setProfiles(list.map(p => ({ id: p.id, name: p.name, location: p.location, isCompleted: p.isCompleted })))
     } finally {
       setIsLoading(false)
     }
@@ -122,6 +122,13 @@ export default function ProfileTable({ onBack, settings }: Props) {
               console.error('Automation failed for profile', profileId, autoRes?.error)
             } else {
               console.log('Automation started for profile', profileId)
+              // Mark completion when automation signals success
+              setCompletedProfiles((prev) => {
+                const next = new Set(prev)
+                next.add(profileId)
+                return next
+              })
+              setProfiles((prev) => prev.map(p => p.id === profileId ? { ...p, isCompleted: true } : p))
             }
           } catch (e) {
             console.error('Automation error for profile', profileId, e)
@@ -197,16 +204,16 @@ export default function ProfileTable({ onBack, settings }: Props) {
                 </Button>
               </div>
             </TableHead>
-            <TableHead>State</TableHead>
             <TableHead>Notes</TableHead>
             <TableHead>Location</TableHead>
+          <TableHead>Completed</TableHead>
             {/* Removed actions/download column */}
           </TableRow>
         </TableHeader>
         <TableBody>
           {sortedProfiles.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="h-32 text-center">
+              <TableCell colSpan={4} className="h-32 text-center">
                 <div className="flex flex-col items-center gap-3">
                   <FolderOpen className="h-12 w-12 text-muted-foreground" />
                   <div className="space-y-1">
@@ -252,44 +259,6 @@ export default function ProfileTable({ onBack, settings }: Props) {
                     </div>
                   </div>
                 </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      {(() => {
-                        const profileState = profileStates.get(profile.id)
-                        if (profileState?.state === 'error') {
-                          return (
-                            <>
-                              <Circle className="h-4 w-4 text-red-500" />
-                              <span className="text-sm text-red-600" title={profileState.error}>error</span>
-                            </>
-                          )
-                        } else if (profileState?.state === 'launching') {
-                          return (
-                            <>
-                              <Circle className="h-4 w-4 text-yellow-500 animate-pulse" />
-                              <span className="text-sm text-yellow-600">launching</span>
-                            </>
-                          )
-                        } else if (runningProfiles.has(profile.id)) {
-                          return (
-                            <>
-                              <Circle className="h-4 w-4 text-green-500" />
-                              <span className="text-sm text-green-600">running</span>
-                            </>
-                          )
-                        } else {
-                          return (
-                            <>
-                              <Circle className="h-4 w-4 text-muted-foreground" />
-                              <span className="text-sm text-muted-foreground">ready</span>
-                            </>
-                          )
-                        }
-                      })()}
-                    </div>
-                  </div>
-                </TableCell>
                 <TableCell className="text-muted-foreground">{profile.notes || '-'}</TableCell>
                 <TableCell className="text-muted-foreground">
                   <div className="flex items-center gap-2">
@@ -317,12 +286,22 @@ export default function ProfileTable({ onBack, settings }: Props) {
                     </Button>
                   </div>
                 </TableCell>
+                <TableCell>
+                  <span
+                    className={`inline-flex items-center gap-2 text-sm ${(profile.isCompleted || completedProfiles.has(profile.id)) ? 'text-green-700' : 'text-muted-foreground'}`}
+                    aria-label={(profile.isCompleted || completedProfiles.has(profile.id)) ? 'Automation completed' : 'Automation not completed'}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${(profile.isCompleted || completedProfiles.has(profile.id)) ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                    {(profile.isCompleted || completedProfiles.has(profile.id)) ? 'Done' : '—'}
+                  </span>
+                </TableCell>
                 {/* Removed download cell */}
               </TableRow>
             ))
           )}
         </TableBody>
       </Table>
+
     </div>
   )
 }
