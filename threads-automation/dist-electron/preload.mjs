@@ -40,5 +40,19 @@ electron.contextBridge.exposeInMainWorld("automationApi", {
         error: (error == null ? void 0 : error.message) || "Unknown error"
       };
     }
+  },
+  runAutomationForProfile: async (payload) => {
+    try {
+      return await electron.ipcRenderer.invoke("run-automation-for-profile", payload);
+    } catch (error) {
+      return { success: false, error: (error == null ? void 0 : error.message) || "Unknown error" };
+    }
+  },
+  closeProfile: async (profileId) => {
+    try {
+      return await electron.ipcRenderer.invoke("close-profile", profileId);
+    } catch (error) {
+      return { success: false, error: (error == null ? void 0 : error.message) || "Unknown error" };
+    }
   }
 });

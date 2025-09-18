@@ -110,6 +110,23 @@ export default function ProfileTable({ onBack, settings }: Props) {
       
       if (result.success) {
         console.log(`Successfully opened ${result.opened?.length || 0} profiles`)
+
+        // Trigger automation for each selected profile after successful open
+        for (const profileId of selectedProfileIds) {
+          try {
+            const autoRes = await window.automationApi.runAutomationForProfile({
+              profileId,
+              profileData: {}
+            })
+            if (!autoRes?.success) {
+              console.error('Automation failed for profile', profileId, autoRes?.error)
+            } else {
+              console.log('Automation started for profile', profileId)
+            }
+          } catch (e) {
+            console.error('Automation error for profile', profileId, e)
+          }
+        }
       } else {
         console.error('Failed to open profiles:', result.error)
       }

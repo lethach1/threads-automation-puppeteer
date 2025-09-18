@@ -4,11 +4,10 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 // IMPORTANT: Avoid importing modules that pull puppeteer/ws to prevent bufferutil issues
 type OpenProfileOptions = { windowWidth: number; windowHeight: number; scalePercent: number }
-type SessionInfo = { wsUrl: string; browser: import('puppeteer-core').Browser }
+import { openProfilesWithConcurrency, closeProfile, withPage } from './sessionManager'
 
 // Use require for external modules after env flags are set
 const require = createRequire(import.meta.url)
-const puppeteer = require('puppeteer-core') as typeof import('puppeteer-core')
 
 // Hint ws to skip optional native deps to avoid bundler resolution issues
 process.env.WS_NO_BUFFER_UTIL = '1'
@@ -35,7 +34,6 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
-const sessions = new Map<string, SessionInfo>()
 
 function createWindow() {
   win = new BrowserWindow({
@@ -96,50 +94,12 @@ ipcMain.handle('select-directory', async () => {
   return result.filePaths[0]
 })
 
-// Open profile via API, then connect Puppeteer and store session
-const OPEN_PROFILE_API = 'http://127.0.0.1:5424/api/open-profile'
-
-async function openOneProfileAndConnect(profileId: string, options: OpenProfileOptions) {
-  const res = await fetch(OPEN_PROFILE_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profileId, options })
-  })
-  if (!res.ok) throw new Error(`bad status ${res.status}`)
-  const data = await res.json()
-  if (!data || data.success !== true || !('wsUrl' in data) || !data.wsUrl) {
-    throw new Error(data?.error || 'open failed / missing wsUrl')
-  }
-
-  // Connect puppeteer and store session
-  const browser = await puppeteer.connect({ browserWSEndpoint: data.wsUrl, defaultViewport: null })
-  sessions.set(profileId, { wsUrl: data.wsUrl, browser })
-  return { profileId }
-}
-
-async function openProfilesWithPool(profileIds: string[], options: OpenProfileOptions, concurrency: number) {
-  const limit = Math.max(1, Math.min(concurrency, profileIds.length))
-  const results: { profileId: string }[] = []
-  let cursor = 0
-  const workers = Array.from({ length: limit }, async () => {
-    while (cursor < profileIds.length) {
-      const index = cursor++
-      const id = profileIds[index]
-      try {
-        const r = await openOneProfileAndConnect(id, options)
-        results.push(r)
-      } catch (e) {
-        console.error('open profile failed', id, e)
-      }
-    }
-  })
-  await Promise.all(workers)
-  return results
-}
+// Session opening/management is handled in sessionManager.ts
 
 // IPC: Run open profiles with concurrency and connect via puppeteer
-ipcMain.handle('run-open-profiles', async (event, payload) => {
+ipcMain.handle('run-open-profiles', async (_event, payload) => {
   try {
+    console.log('[ipc] run-open-profiles called with', payload)
     const { profileIds, windowWidth, windowHeight, scalePercent, concurrency } = payload
 
     if (!Array.isArray(profileIds) || profileIds.length === 0) {
@@ -156,7 +116,8 @@ ipcMain.handle('run-open-profiles', async (event, payload) => {
     }
     
     const concurrencyLimit = Math.max(1, Math.floor(Number(concurrency) || 1))
-    const opened = await openProfilesWithPool(profileIds, options, concurrencyLimit)
+    const opened = await openProfilesWithConcurrency(profileIds, options, concurrencyLimit)
+    console.log('[ipc] run-open-profiles opened:', opened)
     return { success: true, opened }
   } catch (error: any) {
     console.error('Error in run-open-profiles:', error)
@@ -170,10 +131,25 @@ ipcMain.handle('run-open-profiles', async (event, payload) => {
 // Optional: IPC to close a single profile session
 ipcMain.handle('close-profile', async (_event, profileId: string) => {
   try {
-    const s = sessions.get(profileId)
-    if (!s) return { success: false, error: 'session not found' }
-    await s.browser.close()
-    sessions.delete(profileId)
+    const ok = await closeProfile(profileId)
+    if (!ok) return { success: false, error: 'session not found' }
+    return { success: true }
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Unknown error' }
+  }
+})
+
+// Run a simple automation step on an existing session (example stub)
+ipcMain.handle('run-automation-for-profile', async (_event, payload: { profileId: string; profileData?: any }) => {
+  try {
+    const { profileId } = payload || ({} as any)
+    console.log('[ipc] run-automation-for-profile for', profileId)
+    if (!profileId) return { success: false, error: 'profileId is required' }
+    const { runAutomationOnPage } = await import('./automation/ThreadsAutomationController.js')
+    await withPage(profileId, async (page) => {
+      await runAutomationOnPage(page)
+    })
+    console.log('[ipc] automation finished for', profileId)
     return { success: true }
   } catch (error: any) {
     return { success: false, error: error?.message || 'Unknown error' }

@@ -52,5 +52,19 @@ contextBridge.exposeInMainWorld('automationApi', {
         error: error?.message || 'Unknown error'
       }
     }
+  },
+  runAutomationForProfile: async (payload: { profileId: string; profileData?: any }) => {
+    try {
+      return await ipcRenderer.invoke('run-automation-for-profile', payload)
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unknown error' }
+    }
+  },
+  closeProfile: async (profileId: string) => {
+    try {
+      return await ipcRenderer.invoke('close-profile', profileId)
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unknown error' }
+    }
   }
 })

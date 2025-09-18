@@ -6,6 +6,68 @@ const require2 = createRequire(import.meta.url);
 const puppeteer = require2("puppeteer-core");
 process.env.WS_NO_BUFFER_UTIL = "1";
 process.env.WS_NO_UTF_8_VALIDATE = "1";
+const OPEN_PROFILE_API = "http://127.0.0.1:5424/api/open-profile";
+const sessions = /* @__PURE__ */ new Map();
+async function openOneProfileAndConnect(profileId, options) {
+  const res = await fetch(OPEN_PROFILE_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profileId, options })
+  });
+  if (!res.ok) throw new Error(`bad status ${res.status}`);
+  const data = await res.json();
+  if (!data || data.success !== true || !("wsUrl" in data) || !data.wsUrl) {
+    throw new Error((data == null ? void 0 : data.error) || "open failed / missing wsUrl");
+  }
+  const browser = await puppeteer.connect({ browserWSEndpoint: data.wsUrl, defaultViewport: null });
+  sessions.set(profileId, { wsUrl: data.wsUrl, browser });
+  console.log("[sessionManager] connected puppeteer for", profileId, data.wsUrl);
+  return { profileId };
+}
+async function openProfilesWithConcurrency(profileIds, options, concurrency) {
+  const limit = Math.max(1, Math.min(concurrency, profileIds.length));
+  const results = [];
+  let cursor = 0;
+  const workers = Array.from({ length: limit }, async () => {
+    while (cursor < profileIds.length) {
+      const index = cursor++;
+      const id = profileIds[index];
+      try {
+        const r = await openOneProfileAndConnect(id, options);
+        results.push(r);
+      } catch (e) {
+        console.error("open/connect failed", id, e);
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+async function closeProfile(profileId) {
+  const s = sessions.get(profileId);
+  if (!s) return false;
+  await s.browser.close().catch(() => {
+  });
+  sessions.delete(profileId);
+  return true;
+}
+async function withPage(profileId, fn) {
+  const s = sessions.get(profileId);
+  if (!s) throw new Error("session not found");
+  console.log("[sessionManager] creating new page for", profileId);
+  const page = await s.browser.newPage();
+  try {
+    console.log("[sessionManager] running page task for", profileId);
+    return await fn(page);
+  } finally {
+    console.log("[sessionManager] closing page for", profileId);
+    await page.close().catch(() => {
+    });
+  }
+}
+createRequire(import.meta.url);
+process.env.WS_NO_BUFFER_UTIL = "1";
+process.env.WS_NO_UTF_8_VALIDATE = "1";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname, "..");
 const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
@@ -13,7 +75,6 @@ const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
 const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
 let win;
-const sessions = /* @__PURE__ */ new Map();
 function createWindow() {
   win = new BrowserWindow({
     width: 1200,
@@ -56,43 +117,9 @@ ipcMain.handle("select-directory", async () => {
   }
   return result.filePaths[0];
 });
-const OPEN_PROFILE_API = "http://127.0.0.1:5424/api/open-profile";
-async function openOneProfileAndConnect(profileId, options) {
-  const res = await fetch(OPEN_PROFILE_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ profileId, options })
-  });
-  if (!res.ok) throw new Error(`bad status ${res.status}`);
-  const data = await res.json();
-  if (!data || data.success !== true || !("wsUrl" in data) || !data.wsUrl) {
-    throw new Error((data == null ? void 0 : data.error) || "open failed / missing wsUrl");
-  }
-  const browser = await puppeteer.connect({ browserWSEndpoint: data.wsUrl, defaultViewport: null });
-  sessions.set(profileId, { wsUrl: data.wsUrl, browser });
-  return { profileId };
-}
-async function openProfilesWithPool(profileIds, options, concurrency) {
-  const limit = Math.max(1, Math.min(concurrency, profileIds.length));
-  const results = [];
-  let cursor = 0;
-  const workers = Array.from({ length: limit }, async () => {
-    while (cursor < profileIds.length) {
-      const index = cursor++;
-      const id = profileIds[index];
-      try {
-        const r = await openOneProfileAndConnect(id, options);
-        results.push(r);
-      } catch (e) {
-        console.error("open profile failed", id, e);
-      }
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-ipcMain.handle("run-open-profiles", async (event, payload) => {
+ipcMain.handle("run-open-profiles", async (_event, payload) => {
   try {
+    console.log("[ipc] run-open-profiles called with", payload);
     const { profileIds, windowWidth, windowHeight, scalePercent, concurrency } = payload;
     if (!Array.isArray(profileIds) || profileIds.length === 0) {
       return {
@@ -106,7 +133,8 @@ ipcMain.handle("run-open-profiles", async (event, payload) => {
       scalePercent: Number(scalePercent) || 100
     };
     const concurrencyLimit = Math.max(1, Math.floor(Number(concurrency) || 1));
-    const opened = await openProfilesWithPool(profileIds, options, concurrencyLimit);
+    const opened = await openProfilesWithConcurrency(profileIds, options, concurrencyLimit);
+    console.log("[ipc] run-open-profiles opened:", opened);
     return { success: true, opened };
   } catch (error) {
     console.error("Error in run-open-profiles:", error);
@@ -118,10 +146,23 @@ ipcMain.handle("run-open-profiles", async (event, payload) => {
 });
 ipcMain.handle("close-profile", async (_event, profileId) => {
   try {
-    const s = sessions.get(profileId);
-    if (!s) return { success: false, error: "session not found" };
-    await s.browser.close();
-    sessions.delete(profileId);
+    const ok = await closeProfile(profileId);
+    if (!ok) return { success: false, error: "session not found" };
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: (error == null ? void 0 : error.message) || "Unknown error" };
+  }
+});
+ipcMain.handle("run-automation-for-profile", async (_event, payload) => {
+  try {
+    const { profileId } = payload || {};
+    console.log("[ipc] run-automation-for-profile for", profileId);
+    if (!profileId) return { success: false, error: "profileId is required" };
+    const { runAutomationOnPage } = await import("./ThreadsAutomationController-BHbFG2xi.js");
+    await withPage(profileId, async (page) => {
+      await runAutomationOnPage(page);
+    });
+    console.log("[ipc] automation finished for", profileId);
     return { success: true };
   } catch (error) {
     return { success: false, error: (error == null ? void 0 : error.message) || "Unknown error" };
