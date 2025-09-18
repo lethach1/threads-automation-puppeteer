@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 // IMPORTANT: Avoid importing modules that pull puppeteer/ws to prevent bufferutil issues
 type OpenProfileOptions = { windowWidth: number; windowHeight: number; scalePercent: number }
+type SessionInfo = { wsUrl: string; browser: import('puppeteer-core').Browser }
 
 // Use require for external modules after env flags are set
 const require = createRequire(import.meta.url)
+const puppeteer = require('puppeteer-core') as typeof import('puppeteer-core')
 
 // Hint ws to skip optional native deps to avoid bundler resolution issues
 process.env.WS_NO_BUFFER_UTIL = '1'
@@ -33,6 +35,7 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
+const sessions = new Map<string, SessionInfo>()
 
 function createWindow() {
   win = new BrowserWindow({
@@ -93,10 +96,10 @@ ipcMain.handle('select-directory', async () => {
   return result.filePaths[0]
 })
 
-// Simple pool to open profiles by calling the profile manager API directly (no puppeteer connect)
+// Open profile via API, then connect Puppeteer and store session
 const OPEN_PROFILE_API = 'http://127.0.0.1:5424/api/open-profile'
 
-async function openOneProfile(profileId: string, options: OpenProfileOptions) {
+async function openOneProfileAndConnect(profileId: string, options: OpenProfileOptions) {
   const res = await fetch(OPEN_PROFILE_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -104,7 +107,13 @@ async function openOneProfile(profileId: string, options: OpenProfileOptions) {
   })
   if (!res.ok) throw new Error(`bad status ${res.status}`)
   const data = await res.json()
-  if (!data || data.success !== true) throw new Error(data?.error || 'open failed')
+  if (!data || data.success !== true || !('wsUrl' in data) || !data.wsUrl) {
+    throw new Error(data?.error || 'open failed / missing wsUrl')
+  }
+
+  // Connect puppeteer and store session
+  const browser = await puppeteer.connect({ browserWSEndpoint: data.wsUrl, defaultViewport: null })
+  sessions.set(profileId, { wsUrl: data.wsUrl, browser })
   return { profileId }
 }
 
@@ -117,7 +126,7 @@ async function openProfilesWithPool(profileIds: string[], options: OpenProfileOp
       const index = cursor++
       const id = profileIds[index]
       try {
-        const r = await openOneProfile(id, options)
+        const r = await openOneProfileAndConnect(id, options)
         results.push(r)
       } catch (e) {
         console.error('open profile failed', id, e)
@@ -128,7 +137,7 @@ async function openProfilesWithPool(profileIds: string[], options: OpenProfileOp
   return results
 }
 
-// IPC: Run open profiles with concurrency (no puppeteer dependency)
+// IPC: Run open profiles with concurrency and connect via puppeteer
 ipcMain.handle('run-open-profiles', async (event, payload) => {
   try {
     const { profileIds, windowWidth, windowHeight, scalePercent, concurrency } = payload
@@ -155,5 +164,18 @@ ipcMain.handle('run-open-profiles', async (event, payload) => {
       success: false,
       error: error?.message || 'Unknown error'
     }
+  }
+})
+
+// Optional: IPC to close a single profile session
+ipcMain.handle('close-profile', async (_event, profileId: string) => {
+  try {
+    const s = sessions.get(profileId)
+    if (!s) return { success: false, error: 'session not found' }
+    await s.browser.close()
+    sessions.delete(profileId)
+    return { success: true }
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Unknown error' }
   }
 })

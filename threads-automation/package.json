@@ -26,7 +26,8 @@
     "react-dom": "^18.2.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.13",
-    "utf-8-validate": "^6.0.5"
+    "utf-8-validate": "^6.0.5",
+    "puppeteer-core": "^24.17.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.13",
