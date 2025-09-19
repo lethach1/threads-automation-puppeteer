@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld('automationApi', {
       }
     }
   },
-  runAutomationForProfile: async (payload: { profileId: string; profileData?: any }) => {
+  runAutomationForProfile: async (payload: { profileId: string; scenario?: string; input?: any }) => {
     try {
       return await ipcRenderer.invoke('run-automation-for-profile', payload)
     } catch (error: any) {

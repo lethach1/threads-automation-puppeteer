@@ -12,7 +12,7 @@ declare global {
         opened?: { profileId: string }[]
         error?: string
       }>
-      runAutomationForProfile(payload: { profileId: string; profileData?: any }): Promise<{
+      runAutomationForProfile(payload: { profileId: string; scenario?: string; input?: any }): Promise<{
         success: boolean
         error?: string
       }>

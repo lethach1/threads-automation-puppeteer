@@ -140,14 +140,15 @@ ipcMain.handle('close-profile', async (_event, profileId: string) => {
 })
 
 // Run a simple automation step on an existing session (example stub)
-ipcMain.handle('run-automation-for-profile', async (_event, payload: { profileId: string; profileData?: any }) => {
+ipcMain.handle('run-automation-for-profile', async (_event, payload: { profileId: string; scenario?: string; input?: any }) => {
   try {
-    const { profileId } = payload || ({} as any)
+    const { profileId, scenario, input } = payload || ({} as any)
     console.log('[ipc] run-automation-for-profile for', profileId)
     if (!profileId) return { success: false, error: 'profileId is required' }
     const { runAutomationOnPage } = await import('./automation/ThreadsAutomationController.js')
     await withPage(profileId, async (page) => {
-      await runAutomationOnPage(page)
+      const result = await runAutomationOnPage(page, { scenario, input })
+      if (!result?.success) throw new Error(result?.error || 'Scenario failed')
     })
     console.log('[ipc] automation finished for', profileId)
     return { success: true }
