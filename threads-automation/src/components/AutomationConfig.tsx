@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { HelpCircle, Plus, Trash2 } from 'lucide-react'
 import DatePickerAndTimePickerDemo, { type DateTimeValue } from '@/components/ui/datetime-picker'
+import { getCsvPreview, type CsvRow } from '@/utils/csvReader'
 
 type Props = { 
   onContinue?: (config: {
@@ -15,6 +16,7 @@ type Props = {
     windowHeight: number
     scalePercent: number
     numThreads: number
+    csvData?: CsvRow[]
   }) => void 
 }
 
@@ -35,7 +37,8 @@ export default function AutomationConfig({ onContinue }: Props) {
       windowWidth: 800,
       windowHeight: 600,
       scalePercent: 100,
-      schedules: [] as ScheduleItem[]
+      schedules: [] as ScheduleItem[],
+      csvData: [] as CsvRow[]
     },
     'login': {
       useInputExcel: true,
@@ -48,7 +51,8 @@ export default function AutomationConfig({ onContinue }: Props) {
       windowWidth: 800,
       windowHeight: 600,
       scalePercent: 100,
-      schedules: [] as ScheduleItem[]
+      schedules: [] as ScheduleItem[],
+      csvData: [] as CsvRow[]
     },
     'interactive': {
       useInputExcel: true,
@@ -61,7 +65,8 @@ export default function AutomationConfig({ onContinue }: Props) {
       windowWidth: '800',
       windowHeight: '600',
       scalePercent: '100',
-      schedules: [] as ScheduleItem[]
+      schedules: [] as ScheduleItem[],
+      csvData: [] as CsvRow[]
     }
   })
   
@@ -108,13 +113,24 @@ export default function AutomationConfig({ onContinue }: Props) {
   }
 
   const handleFileSelect = async () => {
-    if (!window?.api?.selectDirectory) {
-      console.warn('Directory picker API is not available')
+    if (!window?.api?.selectFile) {
+      console.warn('File picker API is not available')
       return
     }
-    const selectedDir = await window.api.selectDirectory()
-    if (!selectedDir) return
-    updateScenario('filePath', selectedDir)
+    const selectedFile = await window.api.selectFile()
+    if (!selectedFile) return
+    
+    updateScenario('filePath', selectedFile)
+    
+    // Auto-parse CSV if file ends with .csv
+    if (selectedFile.toLowerCase().endsWith('.csv')) {
+      try {
+        const csvData = await window.api.parseCsv(selectedFile)
+        updateScenario('csvData', csvData.rows)
+      } catch (err) {
+        console.error('Failed to parse CSV:', err)
+      }
+    }
   }
 
   const sidebarItems = [
@@ -190,22 +206,61 @@ export default function AutomationConfig({ onContinue }: Props) {
                           <div className="flex items-center space-x-2">
                             <Input
                               type="text"
-                              placeholder="Select a directory..."
+                              placeholder="Select a CSV file..."
                               value={currentScenario.filePath}
                               onChange={(e) => updateScenario('filePath', e.target.value)}
                               className="flex-1"
-                              aria-label="Selected directory path"
+                              aria-label="Selected CSV file path"
                             />
                             <Button 
                               variant="outline"
                               onClick={handleFileSelect}
                               className="h-9 px-3"
-                              aria-label="Select directory"
+                              aria-label="Select CSV file"
                             >
                               Select
                             </Button>
                           </div>
                         </div>
+
+                        {/* CSV Preview */}
+                        {currentScenario.csvData.length > 0 && (() => {
+                          const preview = getCsvPreview({ 
+                            headers: Object.keys(currentScenario.csvData[0] || {}), 
+                            rows: currentScenario.csvData, 
+                            totalRows: currentScenario.csvData.length 
+                          })
+                          return (
+                            <div className="mt-4">
+                              <h4 className="text-sm font-medium mb-2">CSV Preview ({preview.totalRows} rows)</h4>
+                              <div className="border rounded-md overflow-auto max-h-48">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-muted">
+                                    <tr>
+                                      {preview.headers.map(header => (
+                                        <th key={header} className="px-2 py-1 text-left font-medium">{header}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {preview.rows.map((row, i) => (
+                                      <tr key={i} className="border-t">
+                                        {Object.values(row).map((cell, j) => (
+                                          <td key={j} className="px-2 py-1 truncate max-w-32">{cell}</td>
+                                        ))}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                {preview.hasMore && (
+                                  <div className="px-2 py-1 text-xs text-muted-foreground bg-muted">
+                                    ... and {preview.remainingRows} more rows
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })()}
 
                         {/* Sheet ID and Read Type */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -431,7 +486,8 @@ export default function AutomationConfig({ onContinue }: Props) {
                     windowWidth: Math.max(100, width),
                     windowHeight: Math.max(100, height),
                     scalePercent: Math.min(200, Math.max(10, scale)),
-                    numThreads: Math.max(1, threads)
+                    numThreads: Math.max(1, threads),
+                    csvData: currentScenario.csvData
                   }
                   onContinue?.(config)
                 }}

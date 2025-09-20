@@ -28,6 +28,22 @@ electron.contextBridge.exposeInMainWorld("api", {
     } catch {
       return "";
     }
+  },
+  selectFile: async () => {
+    try {
+      const file = await electron.ipcRenderer.invoke("select-file");
+      return typeof file === "string" ? file : "";
+    } catch {
+      return "";
+    }
+  },
+  parseCsv: async (filePath) => {
+    try {
+      return await electron.ipcRenderer.invoke("parse-csv", filePath);
+    } catch (error) {
+      console.error("Failed to parse CSV:", error);
+      throw error;
+    }
   }
 });
 electron.contextBridge.exposeInMainWorld("automationApi", {

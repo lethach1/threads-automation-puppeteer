@@ -8,6 +8,7 @@ type AutomationSettings = {
   windowHeight: number
   scalePercent: number
   numThreads: number
+  csvData?: Array<Record<string, string>>
 }
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
         <ProfileTable 
           onBack={() => setView('config')} 
           settings={settings}
+          csvData={settings.csvData}
         />
       </div>
     )

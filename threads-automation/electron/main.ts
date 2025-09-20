@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { createRequire } from 'node:module'
+// import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 // IMPORTANT: Avoid importing modules that pull puppeteer/ws to prevent bufferutil issues
@@ -7,7 +7,7 @@ type OpenProfileOptions = { windowWidth: number; windowHeight: number; scalePerc
 import { openProfilesWithConcurrency, closeProfile, withPage } from './sessionManager'
 
 // Use require for external modules after env flags are set
-const require = createRequire(import.meta.url)
+// const require = createRequire(import.meta.url)
 
 // Hint ws to skip optional native deps to avoid bundler resolution issues
 process.env.WS_NO_BUFFER_UTIL = '1'
@@ -92,6 +92,75 @@ ipcMain.handle('select-directory', async () => {
   }
 
   return result.filePaths[0]
+})
+
+// IPC: Open file picker and return selected file path
+ipcMain.handle('select-file', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Select a CSV file',
+    properties: ['openFile'],
+    filters: [
+      { name: 'CSV Files', extensions: ['csv'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return ''
+  }
+
+  return result.filePaths[0]
+})
+
+// IPC: Parse CSV file and return data
+ipcMain.handle('parse-csv', async (_event, filePath: string) => {
+  try {
+    const fs = await import('fs')
+    
+    const fileContent = fs.readFileSync(filePath, 'utf-8')
+    const lines = fileContent.split('\n').filter(line => line.trim())
+    
+    if (lines.length === 0) {
+      return { headers: [], rows: [], totalRows: 0 }
+    }
+    
+    // Better CSV parsing that handles commas in values
+    const parseCsvLine = (line: string): string[] => {
+      const result: string[] = []
+      let current = ''
+      let inQuotes = false
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i]
+        
+        if (char === '"') {
+          inQuotes = !inQuotes
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim())
+          current = ''
+        } else {
+          current += char
+        }
+      }
+      result.push(current.trim())
+      return result
+    }
+    
+    const headers = parseCsvLine(lines[0])
+    
+    const rows = lines.slice(1).map((line) => {
+      const values = parseCsvLine(line)
+      const row: Record<string, string> = {}
+      headers.forEach((header, i) => {
+        row[header] = values[i] || ''
+      })
+      return row
+    })
+    return { headers, rows, totalRows: rows.length }
+  } catch (error) {
+    console.error('❌ Failed to parse CSV:', error)
+    throw error
+  }
 })
 
 // Session opening/management is handled in sessionManager.ts

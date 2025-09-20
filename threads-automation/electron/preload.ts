@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
   // ...
 })
 
-// Convenience API for directory selection in renderer
+// Convenience API for file/directory selection in renderer
 contextBridge.exposeInMainWorld('api', {
   selectDirectory: async (): Promise<string> => {
     try {
@@ -31,6 +31,22 @@ contextBridge.exposeInMainWorld('api', {
       return typeof dir === 'string' ? dir : ''
     } catch {
       return ''
+    }
+  },
+  selectFile: async (): Promise<string> => {
+    try {
+      const file = await ipcRenderer.invoke('select-file')
+      return typeof file === 'string' ? file : ''
+    } catch {
+      return ''
+    }
+  },
+  parseCsv: async (filePath: string): Promise<{ headers: string[], rows: Record<string, string>[], totalRows: number }> => {
+    try {
+      return await ipcRenderer.invoke('parse-csv', filePath)
+    } catch (error) {
+      console.error('Failed to parse CSV:', error)
+      throw error
     }
   }
 })

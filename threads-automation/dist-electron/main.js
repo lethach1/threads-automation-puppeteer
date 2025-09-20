@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from "electron";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { createRequire } from "node:module";
 const require2 = createRequire(import.meta.url);
 const puppeteer = require2("puppeteer-core");
 process.env.WS_NO_BUFFER_UTIL = "1";
@@ -65,7 +65,6 @@ async function withPage(profileId, fn) {
     });
   }
 }
-createRequire(import.meta.url);
 process.env.WS_NO_BUFFER_UTIL = "1";
 process.env.WS_NO_UTF_8_VALIDATE = "1";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -116,6 +115,61 @@ ipcMain.handle("select-directory", async () => {
     return "";
   }
   return result.filePaths[0];
+});
+ipcMain.handle("select-file", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "Select a CSV file",
+    properties: ["openFile"],
+    filters: [
+      { name: "CSV Files", extensions: ["csv"] },
+      { name: "All Files", extensions: ["*"] }
+    ]
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return "";
+  }
+  return result.filePaths[0];
+});
+ipcMain.handle("parse-csv", async (_event, filePath) => {
+  try {
+    const fs = await import("fs");
+    const fileContent = fs.readFileSync(filePath, "utf-8");
+    const lines = fileContent.split("\n").filter((line) => line.trim());
+    if (lines.length === 0) {
+      return { headers: [], rows: [], totalRows: 0 };
+    }
+    const parseCsvLine = (line) => {
+      const result = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === "," && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
+    const headers = parseCsvLine(lines[0]);
+    const rows = lines.slice(1).map((line) => {
+      const values = parseCsvLine(line);
+      const row = {};
+      headers.forEach((header, i) => {
+        row[header] = values[i] || "";
+      });
+      return row;
+    });
+    return { headers, rows, totalRows: rows.length };
+  } catch (error) {
+    console.error("❌ Failed to parse CSV:", error);
+    throw error;
+  }
 });
 ipcMain.handle("run-open-profiles", async (_event, payload) => {
   try {

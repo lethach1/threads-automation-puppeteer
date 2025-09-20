@@ -1,5 +1,10 @@
 declare global {
   interface Window {
+    api: {
+      selectDirectory(): Promise<string>
+      selectFile(): Promise<string>
+      parseCsv(filePath: string): Promise<{ headers: string[], rows: Record<string, string>[], totalRows: number }>
+    }
     automationApi: {
       runOpenProfiles(payload: {
         profileIds: string[]
