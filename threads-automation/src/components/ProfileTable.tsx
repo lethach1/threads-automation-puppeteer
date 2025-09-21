@@ -4,7 +4,6 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ArrowUpDown, FolderOpen } from 'lucide-react'
 import { getListProfiles } from '@/services/profileApi'
-import { groupCsvDataByProfile, mapProfileNamesToIds, getCsvSummary } from '@/utils/csvReader'
 
 type Profile = {
   id: string
@@ -23,10 +22,9 @@ type Props = {
     scalePercent: number
     numThreads: number
   }
-  csvData?: Array<Record<string, string>>
 }
 
-export default function ProfileTable({ onBack, settings, csvData }: Props) {
+export default function ProfileTable({ onBack, settings }: Props) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [sortAsc, setSortAsc] = useState(true)
@@ -37,8 +35,6 @@ export default function ProfileTable({ onBack, settings, csvData }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
   const [renamedNames, setRenamedNames] = useState<Map<string, string>>(new Map())
-  const [isProcessingCsv, setIsProcessingCsv] = useState(false)
-  const [csvProgress, setCsvProgress] = useState<{ current: number; total: number; profile: string } | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -89,126 +85,8 @@ export default function ProfileTable({ onBack, settings, csvData }: Props) {
     })
   }
   
-  // CSV Processing Functions - using csvReader utilities
-
-  const openProfile = async (profileId: string) => {
-    const result = await window.automationApi.runOpenProfiles({
-      profileIds: [profileId],
-      windowWidth: settings?.windowWidth || 800,
-      windowHeight: settings?.windowHeight || 600,
-      scalePercent: settings?.scalePercent || 100,
-      concurrency: 1
-    })
-    
-    if (!result.success) {
-      throw new Error(`Failed to open profile ${profileId}`)
-    }
-  }
-
-  const postContentForProfile = async (profileId: string, posts: Array<Record<string, string>>, profileName: string) => {
-    for (let i = 0; i < posts.length; i++) {
-      const post = posts[i]
-      
-      setCsvProgress({ current: i + 1, total: posts.length, profile: profileName })
-      
-      try {
-        const result = await window.automationApi.runAutomationForProfile({
-          profileId,
-          input: {
-            post: post.post,
-            tag: post.tag,
-            image: post.image,
-            schedule: post.Schedule
-          }
-        })
-        
-        if (result.success) {
-          console.log(`✅ Post ${i + 1}/${posts.length} posted successfully for ${profileName}`)
-        } else {
-          console.log(`❌ Post ${i + 1}/${posts.length} failed for ${profileName}: ${result.error}`)
-        }
-        
-        // Delay between posts
-        if (i < posts.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000))
-        }
-        
-      } catch (error) {
-        console.log(`❌ Post ${i + 1}/${posts.length} error for ${profileName}: ${error}`)
-      }
-    }
-  }
-
-  const processCsvAutomation = async () => {
-    if (!csvData || csvData.length === 0) return
-    
-    setIsProcessingCsv(true)
-    setCsvProgress(null)
-    
-    try {
-      // Convert csvData to CsvParseResult format for csvReader functions
-      const csvParseResult = {
-        headers: Object.keys(csvData[0] || {}),
-        rows: csvData,
-        totalRows: csvData.length
-      }
-      
-      // Group CSV data by profile using csvReader utility
-      const profileGroups = groupCsvDataByProfile(csvParseResult)
-      console.log('📊 Profile groups:', profileGroups)
-      
-      // Map profile names to actual profile IDs using csvReader utility
-      const profileMapping = mapProfileNamesToIds(profileGroups, profiles)
-      console.log('🔗 Profile mapping:', profileMapping)
-      
-      // Process each profile group
-      for (const [profileName, posts] of Object.entries(profileGroups)) {
-        const profileId = profileMapping[profileName]
-        
-        if (!profileId) {
-          console.log(`❌ Profile "${profileName}" not found, skipping...`)
-          continue
-        }
-        
-        console.log(`🚀 Starting automation for ${profileName} (${posts.length} posts)`)
-        
-        try {
-          // Open profile
-          await openProfile(profileId)
-          console.log(`✅ Profile ${profileName} opened successfully`)
-          
-          // Post all content for this profile
-          await postContentForProfile(profileId, posts, profileName)
-          
-          // Mark profile as completed
-          setCompletedProfiles(prev => new Set(prev).add(profileId))
-          setProfiles(prev => prev.map(p => p.id === profileId ? { ...p, isCompleted: true } : p))
-          
-          console.log(`🎉 Completed all posts for profile ${profileName}`)
-          
-        } catch (error) {
-          console.log(`❌ Failed to process profile ${profileName}: ${error}`)
-        }
-      }
-      
-      console.log('🎉 All CSV automation completed!')
-      
-    } catch (error) {
-      console.error('❌ CSV processing error:', error)
-    } finally {
-      setIsProcessingCsv(false)
-      setCsvProgress(null)
-    }
-  }
 
   const handleRunSelected = async () => {
-    // If CSV data exists, process CSV automation
-    if (csvData && csvData.length > 0) {
-      await processCsvAutomation()
-      return
-    }
-    
-    // Otherwise, use manual profile selection
     const selectedProfileIds = Array.from(selectedProfiles)
     if (selectedProfileIds.length === 0) return
     
@@ -296,59 +174,20 @@ export default function ProfileTable({ onBack, settings, csvData }: Props) {
           >
             {isLoading ? 'Reloading...' : 'Reload'}
           </Button>
-          {(selectedProfiles.size > 0 || (csvData && csvData.length > 0)) && (
+          {selectedProfiles.size > 0 && (
             <Button 
               variant="default" 
               size="sm" 
               onClick={handleRunSelected}
-              disabled={isProcessingCsv}
               className="bg-green-600 hover:bg-green-700"
             >
-              {isProcessingCsv ? 'Processing...' : (csvData && csvData.length > 0 ? 'Run CSV Automation' : 'Run')}
+              Run
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={onBack}>Back</Button>
         </div>
       </div>
 
-      {/* CSV Processing Progress */}
-      {isProcessingCsv && csvProgress && (
-        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center gap-3">
-            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-blue-900">
-                Processing {csvProgress.profile} ({csvProgress.current}/{csvProgress.total} posts)
-              </p>
-              <div className="w-full bg-blue-200 rounded-full h-2 mt-1">
-                <div 
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${(csvProgress.current / csvProgress.total) * 100}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CSV Data Summary */}
-      {csvData && csvData.length > 0 && !isProcessingCsv && (() => {
-        const csvParseResult = {
-          headers: Object.keys(csvData[0] || {}),
-          rows: csvData,
-          totalRows: csvData.length
-        }
-        const summary = getCsvSummary(csvParseResult)
-        
-        return (
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <h3 className="text-sm font-medium text-green-900 mb-2">CSV Data Ready</h3>
-            <p className="text-sm text-green-700">
-              {summary.totalPosts} posts found across {summary.uniqueProfiles} profiles
-            </p>
-          </div>
-        )
-      })()}
 
       <Table>
         <TableHeader>
