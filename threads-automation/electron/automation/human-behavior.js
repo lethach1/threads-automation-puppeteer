@@ -394,18 +394,21 @@ const humanClickWithOffset = async (page, selector, options = {}) => {
 };
 
 /**
- * Mô phỏng type với mistakes và corrections
+ * Mô phỏng type với mistakes và corrections (dùng CSS selector)
  * @param {Object} page - Puppeteer page object
- * @param {string} xpath - XPath của input field
+ * @param {string} selector - CSS selector của input field
  * @param {string} text - Text cần type
  * @param {number} mistakeRate - Tỷ lệ gõ sai (0-1)
  */
-const humanTypeWithMistakes = async (page, xpath, text, mistakeRate = 0.08) => {
+const humanTypeWithMistakes = async (page, selector, text, mistakeRate = 0.08) => {
   const cursor = createGhostCursor(page);
   
-  // Tìm element theo XPath và click trực tiếp
-  const [element] = await page.$x(xpath);
-  await cursor.click(element);
+  // Click vào element theo CSS selector
+  const element = await page.$(selector);
+  if (!element) {
+    throw new Error(`Element not found for selector: ${selector}`);
+  }
+  await cursor.click(selector);
   await humanDelay(200, 500);
   
   for (let i = 0; i < text.length; i++) {
@@ -414,7 +417,7 @@ const humanTypeWithMistakes = async (page, xpath, text, mistakeRate = 0.08) => {
     // Thỉnh thoảng gõ sai
     if (Math.random() < mistakeRate) {
       const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1);
-      await cursor.type(wrongChar);
+      await page.keyboard.type(wrongChar);
       await humanDelay(100, 300);
       
       // Xóa ký tự sai
@@ -423,8 +426,8 @@ const humanTypeWithMistakes = async (page, xpath, text, mistakeRate = 0.08) => {
     }
     
     // Gõ ký tự đúng
-    await cursor.type(char);
-    await humanDelay(50, 150);
+    await page.keyboard.type(char, { delay: Math.floor(Math.random() * 100) + 30 });
+    await humanDelay(30, 120);
     
     // Thỉnh thoảng dừng lâu hơn
     if (Math.random() < 0.1) {

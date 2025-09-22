@@ -4,7 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ArrowUpDown, FolderOpen } from 'lucide-react'
 import { getListProfiles } from '@/services/profileApi'
-import { parseCsvText, groupCsvDataByProfile } from '@/utils/csvReader'
+// CSV is now provided by config screen; no direct CSV parsing here
 
 type Profile = {
   id: string
@@ -23,9 +23,10 @@ type Props = {
     scalePercent: number
     numThreads: number
   }
+  csvData?: Array<Record<string, string>>
 }
 
-export default function ProfileTable({ onBack, settings }: Props) {
+export default function ProfileTable({ onBack, settings, csvData }: Props) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [sortAsc, setSortAsc] = useState(true)
@@ -37,8 +38,8 @@ export default function ProfileTable({ onBack, settings }: Props) {
   const [editingValue, setEditingValue] = useState('')
   const [renamedNames, setRenamedNames] = useState<Map<string, string>>(new Map())
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [inputByProfileId, setInputByProfileId] = useState<Map<string, { postText?: string; commentText?: string; mediaPath?: string }>>(new Map())
+  // Removed direct CSV upload, inputs come from config
+  const [inputByProfileId, setInputByProfileId] = useState<Map<string, { postText?: string; commentText?: string; mediaPath?: string; tag?: string; schedule?: string; items?: Array<{ postText?: string; commentText?: string; mediaPath?: string; tag?: string; schedule?: string }> }>>(new Map())
 
   useEffect(() => {
     if (editingId && inputRef.current) inputRef.current.focus()
@@ -59,6 +60,43 @@ export default function ProfileTable({ onBack, settings }: Props) {
     // Load profiles when this screen mounts (after Continue from config)
     fetchProfiles()
   }, [])
+
+  // When csvData is provided from the config screen, auto-map it to inputs
+  useEffect(() => {
+    if (!csvData || csvData.length === 0 || profiles.length === 0) return
+    try {
+      const map = new Map<string, { postText?: string; commentText?: string; mediaPath?: string; tag?: string; schedule?: string; items?: Array<{ postText?: string; commentText?: string; mediaPath?: string; tag?: string; schedule?: string }> }>()
+      const nameToId = new Map<string, string>()
+      for (const p of profiles) {
+        nameToId.set((p.displayName || p.name || '').trim(), p.id)
+      }
+      // Group by profile name
+      const groups: Record<string, Array<Record<string, string>>> = {}
+      for (const row of csvData) {
+        const profileName = (row['profile'] || row['Profile'] || '').trim()
+        if (!profileName) continue
+        if (!groups[profileName]) groups[profileName] = []
+        groups[profileName].push(row)
+      }
+      Object.entries(groups).forEach(([profileName, rows]) => {
+        const id = nameToId.get(profileName.trim())
+        if (!id) return
+        const items = rows.map((r) => ({
+          postText: r['post'] || r['postText'] || '',
+          commentText: r['comment'] || r['commentText'] || r['comments'] || '',
+          tag: r['tag'] || r['tags'] || '',
+          mediaPath: r['image'] || r['mediaPath'] || '',
+          schedule: r['Schedule'] || r['schedule'] || ''
+        }))
+        const first = items[0] || {}
+        map.set(id, { ...first, items })
+      })
+      setInputByProfileId(map)
+      console.log('[csv] mapped inputs from config for profiles:', Array.from(map.keys()))
+    } catch (err) {
+      console.error('Map csvData from config failed:', err)
+    }
+  }, [csvData, profiles])
 
   const sortedProfiles = useMemo(() => {
     const items = [...profiles]
@@ -88,45 +126,7 @@ export default function ProfileTable({ onBack, settings }: Props) {
     })
   }
   
-  const handlePickCsv = () => {
-    if (fileInputRef.current) fileInputRef.current.click()
-  }
-
-  const handleCsvSelected: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
-    try {
-      const file = e.target.files?.[0]
-      if (!file) return
-      const text = await file.text()
-      const csv = parseCsvText(text)
-      if (csv.totalRows === 0) {
-        console.warn('CSV empty')
-        return
-      }
-      const groups = groupCsvDataByProfile(csv, 'profile')
-      const map = new Map<string, { postText?: string; commentText?: string; mediaPath?: string }>()
-      // Build name -> id mapping from loaded profiles
-      const nameToId = new Map<string, string>()
-      for (const p of profiles) {
-        nameToId.set((p.displayName || p.name || '').trim(), p.id)
-      }
-      // For each profile name group, pick first row (or customize) and map
-      Object.entries(groups).forEach(([profileName, rows]) => {
-        const id = nameToId.get(profileName.trim())
-        if (!id) return
-        const row = rows[0] || {}
-        const postText = row['post'] || row['postText'] || ''
-        const commentText = row['comment'] || row['commentText'] || ''
-        const mediaPath = row['image'] || row['mediaPath'] || ''
-        map.set(id, { postText, commentText, mediaPath })
-      })
-      setInputByProfileId(map)
-      console.log('[csv] mapped inputs for profiles:', Array.from(map.keys()))
-    } catch (err) {
-      console.error('Load CSV failed:', err)
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
+  // Removed CSV handlers
   
 
   const handleRunSelected = async () => {
@@ -153,10 +153,19 @@ export default function ProfileTable({ onBack, settings }: Props) {
       console.log('Run selected result:', result)
       
       if (result.success) {
-        console.log(`Successfully opened ${result.opened?.length || 0} profiles`)
+        const openedIds: string[] = Array.isArray(result.opened)
+          ? result.opened
+              .map((v: any) => (typeof v === 'string' ? v : (v?.profileId || v?.id)))
+              .filter((v: any) => typeof v === 'string' && v.length > 0)
+          : []
+        console.log(`Successfully opened ${openedIds.length} profiles`)
+        if (openedIds.length === 0) {
+          console.error('No profiles opened; aborting automation run.')
+          return
+        }
 
-        // Trigger automation for each selected profile after successful open
-        for (const profileId of selectedProfileIds) {
+        // Trigger automation only for profiles that actually opened
+        for (const profileId of openedIds) {
           try {
             const input = inputByProfileId.get(profileId) || {}
             const autoRes = await window.automationApi.runAutomationForProfile({
@@ -211,15 +220,7 @@ export default function ProfileTable({ onBack, settings }: Props) {
           <span className="text-sm text-muted-foreground">{selectedProfiles.size} of {profiles.length} selected</span>
         </div>
         <div className="flex items-center gap-2">
-          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvSelected} />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handlePickCsv}
-            title="Load CSV for inputs"
-          >
-            Load CSV
-          </Button>
+          {/* CSV loading removed; inputs come from config */}
           <Button
             variant="outline"
             size="sm"
