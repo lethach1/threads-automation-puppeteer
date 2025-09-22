@@ -212,7 +212,8 @@ ipcMain.handle("run-automation-for-profile", async (_event, payload) => {
     const { profileId, scenario, input } = payload || {};
     console.log("[ipc] run-automation-for-profile for", profileId);
     if (!profileId) return { success: false, error: "profileId is required" };
-    const { runAutomationOnPage } = await import("./ThreadsAutomationController-BERY2wO7.js");
+    const { runAutomationOnPage } = await import("./ThreadsAutomationController-CsbdsqFP.js");
+    console.log("[ipc] scenario:", scenario, "input keys:", input ? Object.keys(input) : []);
     await withPage(profileId, async (page) => {
       const result = await runAutomationOnPage(page, { scenario, input });
       if (!(result == null ? void 0 : result.success)) throw new Error((result == null ? void 0 : result.error) || "Scenario failed");

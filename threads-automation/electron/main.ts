@@ -215,6 +215,7 @@ ipcMain.handle('run-automation-for-profile', async (_event, payload: { profileId
     console.log('[ipc] run-automation-for-profile for', profileId)
     if (!profileId) return { success: false, error: 'profileId is required' }
     const { runAutomationOnPage } = await import('./automation/ThreadsAutomationController.js')
+    console.log('[ipc] scenario:', scenario, 'input keys:', input ? Object.keys(input) : [])
     await withPage(profileId, async (page) => {
       const result = await runAutomationOnPage(page, { scenario, input })
       if (!result?.success) throw new Error(result?.error || 'Scenario failed')

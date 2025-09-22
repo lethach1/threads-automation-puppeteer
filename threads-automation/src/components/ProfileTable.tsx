@@ -4,6 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ArrowUpDown, FolderOpen } from 'lucide-react'
 import { getListProfiles } from '@/services/profileApi'
+import { parseCsvText, groupCsvDataByProfile } from '@/utils/csvReader'
 
 type Profile = {
   id: string
@@ -36,6 +37,8 @@ export default function ProfileTable({ onBack, settings }: Props) {
   const [editingValue, setEditingValue] = useState('')
   const [renamedNames, setRenamedNames] = useState<Map<string, string>>(new Map())
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [inputByProfileId, setInputByProfileId] = useState<Map<string, { postText?: string; commentText?: string; mediaPath?: string }>>(new Map())
 
   useEffect(() => {
     if (editingId && inputRef.current) inputRef.current.focus()
@@ -85,6 +88,46 @@ export default function ProfileTable({ onBack, settings }: Props) {
     })
   }
   
+  const handlePickCsv = () => {
+    if (fileInputRef.current) fileInputRef.current.click()
+  }
+
+  const handleCsvSelected: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+    try {
+      const file = e.target.files?.[0]
+      if (!file) return
+      const text = await file.text()
+      const csv = parseCsvText(text)
+      if (csv.totalRows === 0) {
+        console.warn('CSV empty')
+        return
+      }
+      const groups = groupCsvDataByProfile(csv, 'profile')
+      const map = new Map<string, { postText?: string; commentText?: string; mediaPath?: string }>()
+      // Build name -> id mapping from loaded profiles
+      const nameToId = new Map<string, string>()
+      for (const p of profiles) {
+        nameToId.set((p.displayName || p.name || '').trim(), p.id)
+      }
+      // For each profile name group, pick first row (or customize) and map
+      Object.entries(groups).forEach(([profileName, rows]) => {
+        const id = nameToId.get(profileName.trim())
+        if (!id) return
+        const row = rows[0] || {}
+        const postText = row['post'] || row['postText'] || ''
+        const commentText = row['comment'] || row['commentText'] || ''
+        const mediaPath = row['image'] || row['mediaPath'] || ''
+        map.set(id, { postText, commentText, mediaPath })
+      })
+      setInputByProfileId(map)
+      console.log('[csv] mapped inputs for profiles:', Array.from(map.keys()))
+    } catch (err) {
+      console.error('Load CSV failed:', err)
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+  
 
   const handleRunSelected = async () => {
     const selectedProfileIds = Array.from(selectedProfiles)
@@ -115,8 +158,11 @@ export default function ProfileTable({ onBack, settings }: Props) {
         // Trigger automation for each selected profile after successful open
         for (const profileId of selectedProfileIds) {
           try {
+            const input = inputByProfileId.get(profileId) || {}
             const autoRes = await window.automationApi.runAutomationForProfile({
-              profileId
+              profileId,
+              scenario: 'postAndComment',
+              input
             })
             if (!autoRes?.success) {
               console.error('Automation failed for profile', profileId, autoRes?.error)
@@ -165,6 +211,15 @@ export default function ProfileTable({ onBack, settings }: Props) {
           <span className="text-sm text-muted-foreground">{selectedProfiles.size} of {profiles.length} selected</span>
         </div>
         <div className="flex items-center gap-2">
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvSelected} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePickCsv}
+            title="Load CSV for inputs"
+          >
+            Load CSV
+          </Button>
           <Button
             variant="outline"
             size="sm"

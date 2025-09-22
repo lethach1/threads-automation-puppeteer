@@ -12,9 +12,17 @@ type Input = {
 }
 
 export async function run(page: Page, input: Input = {}) {
+  // Improve debuggability: surface errors and page logs
+  page.setDefaultTimeout(20000)
+  page.on('pageerror', (e) => console.error('[pageerror]', e))
+  page.on('error', (e) => console.error('[targeterror]', e))
+  page.on('console', (m) => console.log('[console]', m.type?.(), m.text?.()))
   try {
     console.log('🚀 Starting Post and Comment automation...')
     console.log('📝 Input:', input)
+    console.log('[input] postText:', input.postText)
+    console.log('[input] commentText:', input.commentText)
+    console.log('[input] mediaPath:', input.mediaPath)
     
     // Step 1: Navigate to Threads
     console.log('📍 Step 1: Navigating to Threads...')
@@ -175,7 +183,8 @@ export async function run(page: Page, input: Input = {}) {
 
   } catch (error) {
     console.error('❌ Post and Comment automation failed:', error)
-    return { success: false, error: error instanceof Error ? error.message : String(error) }
+    // Rethrow so upstream IPC can catch and report properly
+    throw error
   }
 }
 
