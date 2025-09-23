@@ -75,8 +75,14 @@ export const humanMouseMove = async (page, selector, options = {}) => {
  */
 export const humanClick = async (page, selector) => {
   await page.click(selector);
-  await humanDelay(200, 800);
+  await humanDelay(2000, 4000);
 };
+
+export const waitForElements = async (page, selector) => {
+  await page.waitForSelector(selector, { timeout: 10000 })
+  await humanDelay(1000, 2000)
+};
+
 
 /**
  * Mô phỏng scroll tự nhiên

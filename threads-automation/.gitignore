@@ -1,3 +1,9 @@
+# Ignore Electron build outputs
+dist-electron/
+dist-electron/**
+
+# Optional: ignore source maps in dist
+dist-electron/**/*.map
 # Logs
 logs
 *.log
