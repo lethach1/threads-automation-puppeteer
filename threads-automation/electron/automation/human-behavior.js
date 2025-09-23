@@ -72,13 +72,9 @@ export const humanMouseMove = async (page, selector, options = {}) => {
  * Mô phỏng click tự nhiên với ghost-cursor
  * @param {Object} page - Puppeteer page object
  * @param {string} selector - CSS selector của element
- * @param {Object} options - Options cho click
  */
-export const humanClick = async (page, selector, options = {}) => {
-  const cursor = createGhostCursor(page);
-  await cursor.click(selector, options);
-  
-  // Delay sau khi click
+export const humanClick = async (page, selector) => {
+  await page.click(selector);
   await humanDelay(200, 800);
 };
 
@@ -367,31 +363,8 @@ const humanRandomMouseMovement = async (page, duration = 3000) => {
   }
 };
 
-/**
- * Mô phỏng click với random offset
- * @param {Object} page - Puppeteer page object
- * @param {string} selector - CSS selector của element
- * @param {Object} options - Options cho click
- */
-const humanClickWithOffset = async (page, selector, options = {}) => {
-  const cursor = createGhostCursor(page);
-  const element = await page.$(selector);
-  
-  if (!element) return;
-  
-  const box = await element.boundingBox();
-  if (!box) return;
-  
-  // Tạo offset ngẫu nhiên
-  const offsetX = (Math.random() - 0.5) * 20;
-  const offsetY = (Math.random() - 0.5) * 20;
-  
-  const clickX = box.x + box.width / 2 + offsetX;
-  const clickY = box.y + box.height / 2 + offsetY;
-  
-  await cursor.click({ x: clickX, y: clickY }, options);
-  await humanDelay(200, 800);
-};
+
+
 
 /**
  * Mô phỏng type với mistakes và corrections (dùng CSS selector)
@@ -449,6 +422,5 @@ export {
   humanCopyPaste,
   humanUndoRedo,
   humanRandomMouseMovement,
-  humanClickWithOffset,
   humanTypeWithMistakes
 };

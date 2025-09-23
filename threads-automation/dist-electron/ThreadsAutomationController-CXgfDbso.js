@@ -1,3 +1,5 @@
+import { existsSync, statSync, readdirSync } from "fs";
+import { join } from "path";
 import require$$0 from "tty";
 import require$$1 from "util";
 var commonjsGlobal = typeof globalThis !== "undefined" ? globalThis : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : {};
@@ -3360,180 +3362,200 @@ const createGhostCursor = (page) => {
     }
   });
 };
-const humanType = async (page, selector, text, minDelay = 50, maxDelay = 150) => {
-  const cursor = createGhostCursor(page);
-  await cursor.click(selector);
-  await humanDelay(200, 500);
-  await cursor.type(text, {
-    delay: Math.random() * (maxDelay - minDelay) + minDelay
-  });
-  if (Math.random() < 0.1) {
-    await humanDelay(500, 1500);
-  }
-};
-const humanClick = async (page, selector, options = {}) => {
-  const cursor = createGhostCursor(page);
-  await cursor.click(selector, options);
+const humanClick = async (page, selector) => {
+  await page.click(selector);
   await humanDelay(200, 800);
 };
-const humanScroll = async (page, distance = 500, direction = "down") => {
-  const steps = Math.floor(Math.random() * 20) + 10;
-  const stepDistance = distance / steps;
-  for (let i = 0; i < steps; i++) {
-    const scrollAmount = stepDistance + (Math.random() - 0.5) * 20;
-    if (direction === "down") {
-      await page.evaluate((amount) => window.scrollBy(0, amount), scrollAmount);
-    } else {
-      await page.evaluate((amount) => window.scrollBy(0, -amount), scrollAmount);
-    }
-    await humanDelay(50, 200);
-    if (Math.random() < 0.2) {
-      await humanDelay(500, 1500);
-    }
+const humanTypeWithMistakes = async (page, selector, text, mistakeRate = 0.08) => {
+  const cursor = createGhostCursor(page);
+  const element = await page.$(selector);
+  if (!element) {
+    throw new Error(`Element not found for selector: ${selector}`);
   }
-};
-const humanHover = async (page, selector, duration = 2e3) => {
-  const cursor = createGhostCursor(page);
-  await cursor.move(selector);
-  await humanDelay(duration * 0.8, duration * 1.2);
-};
-const humanTypeWithMistakes = async (page, xpath, text, mistakeRate = 0.08) => {
-  const cursor = createGhostCursor(page);
-  const [element] = await page.$x(xpath);
-  await cursor.click(element);
+  await cursor.click(selector);
   await humanDelay(200, 500);
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
     if (Math.random() < mistakeRate) {
       const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1);
-      await cursor.type(wrongChar);
+      await page.keyboard.type(wrongChar);
       await humanDelay(100, 300);
       await page.keyboard.press("Backspace");
       await humanDelay(200, 500);
     }
-    await cursor.type(char);
-    await humanDelay(50, 150);
+    await page.keyboard.type(char, { delay: Math.floor(Math.random() * 100) + 30 });
+    await humanDelay(30, 120);
     if (Math.random() < 0.1) {
       await humanDelay(500, 1500);
     }
   }
 };
-const THREADS_URL = "https://www.threads.com/";
-const TIMEOUTS = {
-  LOGIN: 3e4,
-  NAVIGATION: 6e4,
-  ELEMENT_WAIT: 3e4
-};
-const SELECTORS = {
-  LOGIN: {
-    USERNAME: 'input[name="username"]',
-    PASSWORD: 'input[name="password"]',
-    SUBMIT: 'button[type="submit"]'
-  },
-  THREADS: {
-    PRIMARY_COLUMN: '[data-testid="primaryColumn"]',
-    POST: '[data-testid="post"]',
-    ARTICLE: '[role="article"]',
-    PROFILE: '[data-testid="SideNav_AccountSwitcher_Button"]'
-  }
-};
-class AuthenticationService {
-  /**
-   * Thực hiện auto login
-   * @param page - Puppeteer page instance
-   * @param profile - Profile object with credentials
-   * @returns Promise<boolean> - Login success status
-   */
-  static async performAutoLogin(page, profile) {
-    console.log(`🔐 Attempting auto login for profile: ${profile.name}`);
-    try {
-      await humanType(page, SELECTORS.LOGIN.USERNAME, profile.username || "test");
-      await humanDelay(1e3, 2e3);
-      await humanType(page, SELECTORS.LOGIN.PASSWORD, profile.password || "test");
-      await humanDelay(1e3, 2e3);
-      await humanClick(page, SELECTORS.LOGIN.SUBMIT);
-      await Promise.race([
-        page.waitForNavigation({ waitUntil: "networkidle2", timeout: TIMEOUTS.LOGIN }),
-        page.waitForSelector(SELECTORS.THREADS.PRIMARY_COLUMN, { timeout: TIMEOUTS.ELEMENT_WAIT })
-      ]);
-      return true;
-    } catch (error) {
-      console.log("Login failed:", error.message);
-      return false;
+async function run(page, input = {}) {
+  page.setDefaultTimeout(2e4);
+  page.on("pageerror", (e) => console.error("[pageerror]", e));
+  page.on("error", (e) => console.error("[targeterror]", e));
+  try {
+    console.log("🚀 Starting Post and Comment automation...");
+    console.log("📝 Input:", input);
+    console.log("[input] postText:", input.postText);
+    console.log("[input] commentText:", input.commentText);
+    console.log("[input] mediaPath:", input.mediaPath);
+    if (input.schedule) console.log("[input] schedule:", input.schedule);
+    const items = Array.isArray(input.items) && input.items.length > 0 ? input.items : [{ postText: input.postText, commentText: input.commentText, mediaPath: input.mediaPath, tag: input.tag, schedule: input.schedule }];
+    console.log("[input] items count:", items.length);
+    console.log("📍 Step 1: Navigating to Threads...");
+    await page.goto("https://threads.com/", { waitUntil: "networkidle2" });
+    await humanDelay(1e3, 2e3);
+    console.log("✅ Step 1 completed: Navigation successful");
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const isFirst = i === 0;
+      console.log(`📍 ${isFirst ? "Step 2" : "Extra"}: Opening post composer...`);
+      await page.waitForSelector(".x1i10hfl > .xc26acl", { timeout: 1e4 });
+      await humanClick(page, ".x1i10hfl > .xc26acl");
+      if (item.postText) {
+        if (isFirst) console.log("📍 Step 3: Writing post text...");
+        await page.waitForSelector(".xzsf02u > .xdj266r", { timeout: 1e4 });
+        console.log("⌨️ Typing post text:", item.postText);
+        await humanTypeWithMistakes(page, ".xzsf02u > .xdj266r", item.postText);
+      }
+      const mediaPathStr = (item.mediaPath || "").trim();
+      if (mediaPathStr && existsSync(mediaPathStr)) {
+        try {
+          const stat = statSync(mediaPathStr);
+          const imagePaths = stat.isDirectory() ? readdirSync(mediaPathStr).filter((f) => /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f)).map((f) => join(mediaPathStr, f)) : stat.isFile() ? [mediaPathStr] : [];
+          if (imagePaths.length === 0) {
+            console.log("🟨 No images found to upload in path:", mediaPathStr);
+          } else {
+            if (isFirst) console.log(`📍 Step 4: Uploading ${imagePaths.length} image(s)...`);
+            const candidateSelectors = [
+              ".x6s0dn4 > .x1i10hfl:nth-child(1) > .x1n2onr6 > .x1lliihq"
+            ];
+            for (const [idx, filePath] of imagePaths.entries()) {
+              try {
+                let fileInput = await page.$('input[type="file"]');
+                if (fileInput) {
+                  console.log("🔎 Using existing file input (no button click)");
+                }
+                if (!fileInput) {
+                  let clicked = false;
+                  for (const sel of candidateSelectors) {
+                    const btn = await page.$(sel);
+                    if (!btn) continue;
+                    await humanDelay(300, 700);
+                    await btn.click();
+                    console.log("🖱️ Clicked add-media button with selector:", sel);
+                    clicked = true;
+                    break;
+                  }
+                  if (clicked) {
+                    await humanDelay(500, 1e3);
+                    fileInput = await page.$('input[type="file"]');
+                    if (fileInput) {
+                      console.log("✅ Found file input after clicking button");
+                    } else {
+                      console.log("⚠️ Still no file input after button click");
+                    }
+                  }
+                }
+                if (!fileInput) {
+                  console.log("🟨 File input not found; skipping this image");
+                  continue;
+                }
+                console.log(`📷 Uploading image ${idx + 1}/${imagePaths.length}:`, filePath);
+                await fileInput.uploadFile(filePath);
+                await humanDelay(1500, 2500);
+              } catch (err) {
+                console.log("🟨 Upload single image failed:", (err == null ? void 0 : err.message) || err);
+              }
+            }
+          }
+        } catch (e) {
+          console.log("🟨 Media upload skipped due to error:", (e == null ? void 0 : e.message) || e);
+        }
+      } else if (mediaPathStr) {
+        console.log("🟨 Invalid media path, skipping upload:", mediaPathStr);
+      }
+      if (item.tag) {
+        if (isFirst) console.log("📍 Step 7: Adding topic/tag...");
+        await page.waitForSelector("input.xwhw2v2", { timeout: 1e4 });
+        await humanClick(page, "input.xwhw2v2");
+        await page.keyboard.type(item.tag, { delay: 50 });
+      }
+      if (isFirst) console.log("📍 Step 8: Posting content...");
+      await page.waitForSelector(".x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl", { timeout: 1e4 });
+      await humanClickWithOffset(page, ".x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl");
+      if (isFirst) {
+        console.log("✅ Step 8 completed: Content posted successfully");
+        await page.waitForSelector(".x78zum5 > .x1i10hfl > .x90nhty > .xl1xv1r", { timeout: 1e4 });
+        await humanClickWithOffset(page, ".x78zum5 > .x1i10hfl > .x90nhty > .xl1xv1r");
+        await page.waitForSelector(".x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619:nth-child(1) .x1xdureb:nth-child(3) .x6s0dn4:nth-child(2) .x1lliihq:nth-child(1)", { timeout: 1e4 });
+        await humanClickWithOffset(page, ".x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619:nth-child(1) .x1xdureb:nth-child(3) .x6s0dn4:nth-child(2) .x1lliihq:nth-child(1)");
+        if (item.commentText) {
+          console.log("📍 Step 11: Writing comment...");
+          await page.waitForSelector(".xzsf02u > .xdj266r", { timeout: 1e4 });
+          await humanClickWithOffset(page, ".xzsf02u > .xdj266r");
+          console.log("⌨️ Typing comment:", item.commentText);
+          await humanTypeWithMistakes(page, ".xzsf02u > .xdj266r", item.commentText);
+        }
+        await page.waitForSelector(".x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl", { timeout: 1e4 });
+        await humanDelay(1e3, 2e3);
+        await humanClickWithOffset(page, ".x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl");
+        await page.waitForSelector(".x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619 .x1ypdohk > .xrvj5dj", { timeout: 1e4 });
+        await humanDelay(2e3, 3e3);
+        await humanClickWithOffset(page, ".x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619 .x1ypdohk > .xrvj5dj");
+        await page.reload({ waitUntil: "networkidle2" });
+        await humanDelay(3e3, 5e3);
+        console.log("📍 Step 15: Pinning comment...");
+        await page.waitForSelector(".xqcrz7y .xkqq1k2 .x1lliihq", { timeout: 1e4 });
+        await humanDelay(1e3, 2e3);
+        await humanClickWithOffset(page, ".xqcrz7y .xkqq1k2 .x1lliihq");
+        await page.waitForSelector(".x1i10hfl:nth-child(2) > .x6s0dn4", { timeout: 1e4 });
+        await humanDelay(1e3, 2e3);
+        await humanClickWithOffset(page, ".x1i10hfl:nth-child(2) > .x6s0dn4");
+        console.log("✅ Step 15 completed: Comment pinned");
+      }
+      await page.waitForSelector("svg.xus2keu", { timeout: 1e4 });
+      await humanClickWithOffset(page, "svg.xus2keu");
     }
-  }
-  /**
-   * Đảm bảo đã đăng nhập
-   * @param page - Puppeteer page instance
-   * @param profile - Profile object with credentials
-   * @returns Promise<boolean> - Login success status
-   */
-  static async ensureLoggedIn(page, profile) {
-    console.log(`🔐 Checking login status for profile: ${profile.name}`);
-    const loginSuccess = await this.performAutoLogin(page, profile);
-    return loginSuccess;
+    console.log("🎉 All automation steps completed successfully!");
+    return { success: true };
+  } catch (error) {
+    console.error("❌ Post and Comment automation failed:", error);
+    throw error;
   }
 }
-const performHumanActions = async (page) => {
+const __vite_glob_0_0 = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.defineProperty({
+  __proto__: null,
+  run
+}, Symbol.toStringTag, { value: "Module" }));
+const runAutomationOnPage = async (page, opts) => {
+  const scenario = ((opts == null ? void 0 : opts.scenario) || "openHomepage").trim();
   try {
-    await humanScroll(page, 800, "down");
-    await humanDelay(2e3, 4e3);
-    const hoverSelectors = [
-      SELECTORS.THREADS.POST,
-      SELECTORS.THREADS.ARTICLE,
-      "article",
-      ".x1lliihq"
-    ];
-    for (const selector of hoverSelectors) {
-      try {
-        const element = await page.$(selector);
-        if (element) {
-          await humanHover(page, selector, 1e3);
-          await humanDelay(500, 1500);
-          break;
-        }
-      } catch {
+    switch (scenario) {
+      case "openHomepage": {
+        await page.goto("https://threads.com/", { waitUntil: "networkidle2" });
+        return { success: true };
+      }
+      default: {
+        console.log("[router] resolving scenario:", scenario);
+        const tsModules = /* @__PURE__ */ Object.assign({ "./scenarios/postAndComment.ts": __vite_glob_0_0 });
+        const jsModules = /* @__PURE__ */ Object.assign({});
+        const tsKey = `./scenarios/${scenario}.ts`;
+        const jsKey = `./scenarios/${scenario}.js`;
+        const mod = tsModules[tsKey] || jsModules[jsKey];
+        if (!mod) throw new Error(`Scenario module not found: ${tsKey} | ${jsKey}`);
+        if (!mod.run) throw new Error(`Scenario '${scenario}' has no exported 'run'`);
+        console.log("[router] scenario module loaded");
+        const result = await mod.run(page, opts == null ? void 0 : opts.input);
+        return result ?? { success: true };
       }
     }
-    await humanScroll(page, 400, "up");
-    await humanDelay(1e3, 2e3);
-    try {
-      const profileSelectors = [
-        SELECTORS.THREADS.PROFILE,
-        '[aria-label*="profile"]',
-        '[aria-label*="Profile"]',
-        'a[href*="/profile"]'
-      ];
-      for (const selector of profileSelectors) {
-        const element = await page.$(selector);
-        if (element) {
-          await humanClick(page, selector);
-          await humanDelay(2e3, 4e3);
-          break;
-        }
-      }
-    } catch {
-    }
-  } catch {
+  } catch (error) {
+    console.error("[router] scenario error:", error);
+    return { success: false, error: (error == null ? void 0 : error.message) || "Scenario error" };
   }
-};
-const runAutomationOnPage = async (page, profile) => {
-  await page.goto(THREADS_URL, { waitUntil: "networkidle2", timeout: TIMEOUTS.NAVIGATION });
-  await humanDelay(3e3, 5e3);
-  const loggedIn = await AuthenticationService.ensureLoggedIn(page, profile);
-  if (!loggedIn) throw new Error("Login failed or timeout");
-  const postXpath = "/html/body/div[3]/div/div/div[2]/div[2]/div/div/div/div[1]/div[1]/div[1]/div/div/div[2]/div[1]/div[2]/div/div[1]/span";
-  const contentPostXpath = "/html/body/div[3]/div/div/div[3]/div/div/div[1]/div/div[2]/div/div/div/div[2]/div/div/div/div/div/div[2]/div/div/div[1]/div[2]/div[2]/div[1]/p";
-  const [postElement] = await page.$x(postXpath);
-  if (postElement) {
-    await postElement.click();
-    await humanDelay(2e3, 4e3);
-    await humanTypeWithMistakes(page, contentPostXpath, "Hello, world!");
-  }
-  await performHumanActions(page);
-  await humanDelay(2e3, 4e3);
 };
 export {
-  performHumanActions,
   runAutomationOnPage
 };

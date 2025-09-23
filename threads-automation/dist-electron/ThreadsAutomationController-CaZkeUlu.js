@@ -3362,13 +3362,25 @@ const createGhostCursor = (page) => {
     }
   });
 };
+const humanClickWithOffset = async (page, selector, options = {}) => {
+  const element = await page.$(selector);
+  if (!element) return;
+  const box = await element.boundingBox();
+  if (!box) return;
+  const offsetX = (Math.random() - 0.5) * 20;
+  const offsetY = (Math.random() - 0.5) * 20;
+  const clickX = box.x + box.width / 2 + offsetX;
+  const clickY = box.y + box.height / 2 + offsetY;
+  await cursor.click({ x: clickX, y: clickY }, options);
+  await humanDelay(200, 800);
+};
 const humanTypeWithMistakes = async (page, selector, text, mistakeRate = 0.08) => {
-  const cursor = createGhostCursor(page);
+  const cursor2 = createGhostCursor(page);
   const element = await page.$(selector);
   if (!element) {
     throw new Error(`Element not found for selector: ${selector}`);
   }
-  await cursor.click(selector);
+  await cursor2.click(selector);
   await humanDelay(200, 500);
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
@@ -3401,37 +3413,32 @@ async function run(page, input = {}) {
     console.log("[input] items count:", items.length);
     console.log("📍 Step 1: Navigating to Threads...");
     await page.goto("https://threads.com/", { waitUntil: "networkidle2" });
-    await humanDelay(2e3, 4e3);
+    await humanDelay(1e3, 2e3);
     console.log("✅ Step 1 completed: Navigation successful");
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const isFirst = i === 0;
       console.log(`📍 ${isFirst ? "Step 2" : "Extra"}: Opening post composer...`);
       await page.waitForSelector(".x1i10hfl > .xc26acl", { timeout: 1e4 });
-      await humanDelay(1e3, 2e3);
-      await page.click(".x1i10hfl > .xc26acl");
-      await humanDelay(2e3, 3e3);
+      await humanClickWithOffset(page, ".x1i10hfl > .xc26acl");
       if (item.postText) {
         if (isFirst) console.log("📍 Step 3: Writing post text...");
         await page.waitForSelector(".xzsf02u > .xdj266r", { timeout: 1e4 });
-        await humanDelay(1e3, 2e3);
-        await page.click(".xzsf02u > .xdj266r");
-        await humanDelay(500, 1e3);
-        await page.keyboard.down("Control");
-        await page.keyboard.press("KeyA");
-        await page.keyboard.up("Control");
-        await humanDelay(200, 500);
         console.log("⌨️ Typing post text:", item.postText);
         await humanTypeWithMistakes(page, ".xzsf02u > .xdj266r", item.postText);
-        await humanDelay(1e3, 2e3);
       }
       const mediaPathStr = (item.mediaPath || "").trim();
       if (mediaPathStr && existsSync(mediaPathStr)) {
         try {
           const stat = statSync(mediaPathStr);
           const imagePaths = stat.isDirectory() ? readdirSync(mediaPathStr).filter((f) => /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f)).map((f) => join(mediaPathStr, f)) : stat.isFile() ? [mediaPathStr] : [];
-          if (imagePaths.length > 0) {
+          if (imagePaths.length === 0) {
+            console.log("🟨 No images found to upload in path:", mediaPathStr);
+          } else {
             if (isFirst) console.log(`📍 Step 4: Uploading ${imagePaths.length} image(s)...`);
+            const candidateSelectors = [
+              ".x6s0dn4 > .x1i10hfl:nth-child(1) > .x1n2onr6 > .x1lliihq"
+            ];
             for (const [idx, filePath] of imagePaths.entries()) {
               try {
                 let fileInput = await page.$('input[type="file"]');
@@ -3439,23 +3446,15 @@ async function run(page, input = {}) {
                   console.log("🔎 Using existing file input (no button click)");
                 }
                 if (!fileInput) {
-                  const candidateSelectors = [
-                    ".x1uvtmcs > .__fb-dark-mode",
-                    'div[role="button"][aria-label*="photo" i]',
-                    'div[role="button"][aria-label*="image" i]',
-                    'button[aria-label*="photo" i]',
-                    'button[aria-label*="image" i]'
-                  ];
                   let clicked = false;
                   for (const sel of candidateSelectors) {
                     const btn = await page.$(sel);
-                    if (btn) {
-                      await humanDelay(300, 700);
-                      await btn.click();
-                      console.log("🖱️ Clicked add-media button with selector:", sel);
-                      clicked = true;
-                      break;
-                    }
+                    if (!btn) continue;
+                    await humanDelay(300, 700);
+                    await btn.click();
+                    console.log("🖱️ Clicked add-media button with selector:", sel);
+                    clicked = true;
+                    break;
                   }
                   if (clicked) {
                     await humanDelay(500, 1e3);
@@ -3467,19 +3466,17 @@ async function run(page, input = {}) {
                     }
                   }
                 }
-                if (fileInput) {
-                  console.log(`📷 Uploading image ${idx + 1}/${imagePaths.length}:`, filePath);
-                  await fileInput.uploadFile(filePath);
-                  await humanDelay(1500, 2500);
-                } else {
+                if (!fileInput) {
                   console.log("🟨 File input not found; skipping this image");
+                  continue;
                 }
+                console.log(`📷 Uploading image ${idx + 1}/${imagePaths.length}:`, filePath);
+                await fileInput.uploadFile(filePath);
+                await humanDelay(1500, 2500);
               } catch (err) {
                 console.log("🟨 Upload single image failed:", (err == null ? void 0 : err.message) || err);
               }
             }
-          } else {
-            console.log("🟨 No images found to upload in path:", mediaPathStr);
           }
         } catch (e) {
           console.log("🟨 Media upload skipped due to error:", (e == null ? void 0 : e.message) || e);
@@ -3490,62 +3487,44 @@ async function run(page, input = {}) {
       if (item.tag) {
         if (isFirst) console.log("📍 Step 7: Adding topic/tag...");
         await page.waitForSelector("input.xwhw2v2", { timeout: 1e4 });
-        await humanDelay(1e3, 2e3);
-        await page.click("input.xwhw2v2");
-        await humanDelay(500, 800);
+        await humanClickWithOffset(page, "input.xwhw2v2");
         await page.keyboard.type(item.tag, { delay: 50 });
-        await humanDelay(800, 1200);
       }
       if (isFirst) console.log("📍 Step 8: Posting content...");
       await page.waitForSelector(".x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl", { timeout: 1e4 });
-      await humanDelay(1e3, 2e3);
-      await page.click(".x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl");
-      await humanDelay(3e3, 5e3);
+      await humanClickWithOffset(page, ".x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl");
       if (isFirst) {
         console.log("✅ Step 8 completed: Content posted successfully");
         await page.waitForSelector(".x78zum5 > .x1i10hfl > .x90nhty > .xl1xv1r", { timeout: 1e4 });
-        await humanDelay(2e3, 3e3);
-        await page.click(".x78zum5 > .x1i10hfl > .x90nhty > .xl1xv1r");
-        await humanDelay(3e3, 5e3);
+        await humanClickWithOffset(page, ".x78zum5 > .x1i10hfl > .x90nhty > .xl1xv1r");
         await page.waitForSelector(".x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619:nth-child(1) .x1xdureb:nth-child(3) .x6s0dn4:nth-child(2) .x1lliihq:nth-child(1)", { timeout: 1e4 });
-        await humanDelay(1e3, 2e3);
-        await page.click(".x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619:nth-child(1) .x1xdureb:nth-child(3) .x6s0dn4:nth-child(2) .x1lliihq:nth-child(1)");
-        await humanDelay(2e3, 3e3);
+        await humanClickWithOffset(page, ".x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619:nth-child(1) .x1xdureb:nth-child(3) .x6s0dn4:nth-child(2) .x1lliihq:nth-child(1)");
         if (item.commentText) {
           console.log("📍 Step 11: Writing comment...");
           await page.waitForSelector(".xzsf02u > .xdj266r", { timeout: 1e4 });
-          await humanDelay(1e3, 2e3);
-          await page.click(".xzsf02u > .xdj266r");
-          await humanDelay(500, 1e3);
-          await page.keyboard.down("Control");
-          await page.keyboard.press("KeyA");
-          await page.keyboard.up("Control");
-          await humanDelay(200, 500);
+          await humanClickWithOffset(page, ".xzsf02u > .xdj266r");
           console.log("⌨️ Typing comment:", item.commentText);
           await humanTypeWithMistakes(page, ".xzsf02u > .xdj266r", item.commentText);
-          await humanDelay(1e3, 2e3);
         }
         await page.waitForSelector(".x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl", { timeout: 1e4 });
         await humanDelay(1e3, 2e3);
-        await page.click(".x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl");
-        await humanDelay(3e3, 5e3);
+        await humanClickWithOffset(page, ".x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl");
         await page.waitForSelector(".x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619 .x1ypdohk > .xrvj5dj", { timeout: 1e4 });
         await humanDelay(2e3, 3e3);
-        await page.click(".x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619 .x1ypdohk > .xrvj5dj");
-        await humanDelay(3e3, 5e3);
+        await humanClickWithOffset(page, ".x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619 .x1ypdohk > .xrvj5dj");
         await page.reload({ waitUntil: "networkidle2" });
         await humanDelay(3e3, 5e3);
         console.log("📍 Step 15: Pinning comment...");
         await page.waitForSelector(".xqcrz7y .xkqq1k2 .x1lliihq", { timeout: 1e4 });
         await humanDelay(1e3, 2e3);
-        await page.click(".xqcrz7y .xkqq1k2 .x1lliihq");
-        await humanDelay(1e3, 2e3);
+        await humanClickWithOffset(page, ".xqcrz7y .xkqq1k2 .x1lliihq");
         await page.waitForSelector(".x1i10hfl:nth-child(2) > .x6s0dn4", { timeout: 1e4 });
         await humanDelay(1e3, 2e3);
-        await page.click(".x1i10hfl:nth-child(2) > .x6s0dn4");
-        await humanDelay(2e3, 3e3);
+        await humanClickWithOffset(page, ".x1i10hfl:nth-child(2) > .x6s0dn4");
         console.log("✅ Step 15 completed: Comment pinned");
       }
+      await page.waitForSelector("svg.xus2keu", { timeout: 1e4 });
+      await humanClickWithOffset(page, "svg.xus2keu");
     }
     console.log("🎉 All automation steps completed successfully!");
     return { success: true };
