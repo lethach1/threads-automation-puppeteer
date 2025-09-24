@@ -36,11 +36,70 @@ export async function run(page: Page, input: Input = {}) {
       : [{ postText: input.postText, commentText: input.commentText, mediaPath: input.mediaPath, tag: input.tag, schedule: input.schedule }]
     console.log('[input] items count:', items.length)
     
+    // Build list of comments from dynamic fields: Comment1..N, Comments, commentText
+    const extractCommentTexts = (raw: Record<string, any>): string[] => {
+      try {
+        const entries = Object.entries(raw || {})
+        // Collect keys matching Comment / Comment1..N (case-insensitive)
+        const numbered: Array<{ order: number; value: string }> = []
+        let singleCommentsCell = ''
+        let legacySingle = ''
+
+        for (const [key, val] of entries) {
+          if (val == null) continue
+          const str = String(val).trim()
+          if (!str) continue
+          const lower = key.toLowerCase()
+          if (lower === 'comments') {
+            singleCommentsCell = str
+            continue
+          }
+          if (lower === 'commenttext') {
+            legacySingle = str
+            continue
+          }
+          const match = /^comment(\d+)?$/i.exec(key)
+          if (match) {
+            const order = match[1] ? parseInt(match[1], 10) : 0
+            numbered.push({ order, value: str })
+          }
+        }
+
+        // Sort numbered comments by order (Comment, Comment1, Comment2, ...)
+        numbered.sort((a, b) => a.order - b.order)
+        const fromNumbered = numbered.map((n) => n.value)
+
+        // Fallback: split Comments cell by | or newline
+        let fromSingleCell: string[] = []
+        if (!fromNumbered.length && singleCommentsCell) {
+          fromSingleCell = singleCommentsCell
+            .split(/\||\r\n|\n/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+        }
+
+        // Legacy fallback: single commentText
+        let fromLegacy: string[] = []
+        if (!fromNumbered.length && !fromSingleCell.length && legacySingle) {
+          fromLegacy = [legacySingle]
+        }
+
+        const combined = [...fromNumbered, ...fromSingleCell, ...fromLegacy]
+          .map((s) => s.trim())
+          .filter(Boolean)
+
+        return combined
+      } catch (e) {
+        console.log('🟨 extractCommentTexts error:', (e as any)?.message || e)
+        return []
+      }
+    }
+
+    //start script
     // Step 1: Navigate to Threads
-    console.log('📍 Step 1: Navigating to Threads...')
+    console.log('📍 Step 1: Start script')
     await page.goto('https://threads.com/', { waitUntil: 'networkidle2' })
     await humanDelay(2000, 4000)
-    console.log('✅ Step 1 completed: Navigation successful')
 
     // Unified loop: first item runs full flow; subsequent items run lightweight post-only flow
     for (let i = 0; i < items.length; i++) {
@@ -154,45 +213,35 @@ export async function run(page: Page, input: Input = {}) {
         await humanClick(page,'.x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619:nth-child(1) .x1xdureb:nth-child(3) .x6s0dn4:nth-child(2) .x1lliihq:nth-child(1)')
         await humanDelay(1000, 2000)
 
-        if (item.commentText) {
-          // mở comment và viết comment
-          await waitForElements(page,'.xzsf02u > .xdj266r')
-          await humanClick(page,'.xzsf02u > .xdj266r')
-          console.log('⌨️ Typing comment:', item.commentText)
-          await humanTypeWithMistakes(page, '.xzsf02u > .xdj266r', item.commentText)
+        const commentTexts = extractCommentTexts(item as any)
+        console.log(`🗨️ Comments to post: ${commentTexts.length}`)
+
+        for (let j = 0; j < commentTexts.length; j++) {
+          const comment = commentTexts[j]
+          const attemptPost = async () => {
+            await waitForElements(page,'.xzsf02u > .xdj266r')
+            await humanClick(page,'.xzsf02u > .xdj266r')
+            console.log(`⌨️ Typing comment ${j + 1}/${commentTexts.length}:`, comment.slice(0, 80))
+            await humanTypeWithMistakes(page, '.xzsf02u > .xdj266r', comment)
+            await waitForElements(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
+            await humanClick(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
+          }
+
+          await attemptPost()
+          await humanDelay(2000, 3000)
+          console.log(`✅ Comment ${j + 1} posted`)
+
+          // Human-like delay between comments
+          if (j < commentTexts.length - 1) {
+            await humanDelay(2000, 5000)
+          }
         }
-  
-        // click đăng comment
-        await waitForElements(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
-        await humanClick(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
-        await humanDelay(2000, 3000)
-        console.log('Step 9 completed: comment posted successfully')
 
         await page.reload({ waitUntil: 'networkidle2' })
         await humanDelay(3000, 5000)
 
-        //  click mở trang comment  
-        await waitForElements(page,'.x78zum5:nth-child(1) > .x9f619 > .x1a2a7pz .x4vbgl9 > .x78zum5')
-        await humanClick(page,'.x78zum5:nth-child(1) > .x9f619 > .x1a2a7pz .x4vbgl9 > .x78zum5')
-        console.log('Step 10 completed: comment page opened')
-
-        // reload page để load lại dom
-        await page.reload({ waitUntil: 'networkidle2' })
-        await humanDelay(3000, 5000)
-        console.log('Step 11 completed: page reloaded')
-
-        // mở tuỳ chọn pin comment
-        await waitForElements(page,'.xqcrz7y .xkqq1k2 .x1lliihq')
-        await humanClick(page,'.xqcrz7y .xkqq1k2 .x1lliihq')
-        console.log('📍 Step 15: Pinning comment...')
-
-
-        // click pin comment
-        await waitForElements(page,'.x1i10hfl:nth-child(2) > .x6s0dn4')
-        await humanClick(page,'.x1i10hfl:nth-child(2) > .x6s0dn4')
-        console.log('✅ Step 15 completed: Comment pinned')
-      }
       await humanClick(page,'.x1ypdohk > path')
+    }
     }
 
     
