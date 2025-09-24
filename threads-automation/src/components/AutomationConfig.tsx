@@ -4,8 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-// Select components removed - no longer needed
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+// Tabs components no longer needed - using sidebar instead
 import { HelpCircle, Plus, Trash2, Copy } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import DatePickerAndTimePickerDemo, { type DateTimeValue } from '@/components/ui/datetime-picker'
@@ -22,10 +21,8 @@ type Props = {
 }
 
 export default function AutomationConfig({ onContinue }: Props) {
-  const [activeSidebar, setActiveSidebar] = useState('posts-comment')
-  // showAllRows removed - always show all rows now
-  const [viewAsObject, setViewAsObject] = useState(false) // Toggle between table and object view
   const [activeTab, setActiveTab] = useState('input-from-application')
+  const [viewAsObject, setViewAsObject] = useState(false) // Toggle between table and object view
   
   // Separate state for each scenario
   const [scenarios, setScenarios] = useState({
@@ -63,15 +60,15 @@ export default function AutomationConfig({ onContinue }: Props) {
   
   type ScheduleItem = { id: string, value: DateTimeValue, saved: boolean }
   
-  // Get current scenario data
-  const currentScenario = scenarios[activeSidebar as keyof typeof scenarios]
+  // Get current scenario data - using posts-comment as default since we removed scenario selection
+  const currentScenario = scenarios['posts-comment']
 
   // Helper function to update scenario data
   const updateScenario = (key: string, value: any) => {
     setScenarios(prev => ({
       ...prev,
-      [activeSidebar]: {
-        ...prev[activeSidebar as keyof typeof prev],
+      'posts-comment': {
+        ...prev['posts-comment'],
         [key]: value
       }
     }))
@@ -162,10 +159,10 @@ export default function AutomationConfig({ onContinue }: Props) {
     }
   }
 
-  const sidebarItems = [
-    { id: 'posts-comment', label: 'Posts and comment', icon: '📝' },
-    { id: 'login', label: 'Login', icon: '🔐' },
-    { id: 'interactive', label: 'Interactive', icon: '🎮' }
+  const tabItems = [
+    { id: 'input-from-application', label: 'Input from application', icon: '📝' },
+    { id: 'run-configuration', label: 'Run Configuration', icon: '⚙️' },
+    { id: 'schedule', label: 'Schedule', icon: '📅' }
   ]
 
   return (
@@ -176,12 +173,12 @@ export default function AutomationConfig({ onContinue }: Props) {
           <div className="p-6">
             <h1 className="text-2xl font-bold text-blue-600 mb-8">Automation Configuration</h1>
             <nav className="space-y-2">
-              {sidebarItems.map((item) => (
+              {tabItems.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setActiveSidebar(item.id)}
+                  onClick={() => setActiveTab(item.id)}
                   className={`w-full flex items-center gap-3 px-4 py-3 text-left rounded-lg transition-colors ${
-                    activeSidebar === item.id
+                    activeTab === item.id
                       ? 'bg-primary text-primary-foreground'
                       : 'hover:bg-muted text-muted-foreground hover:text-foreground'
                   }`}
@@ -197,15 +194,8 @@ export default function AutomationConfig({ onContinue }: Props) {
         {/* Main Content */}
         <div className="flex-1 p-8">
           <div className="max-w-4xl">
-            {/* Tabs */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="input-from-application">Input from application</TabsTrigger>
-                <TabsTrigger value="run-configuration">Run Configuration</TabsTrigger>
-                <TabsTrigger value="schedule">Schedule</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="input-from-application" className="mt-6">
+            {/* Content based on active tab */}
+            {activeTab === 'input-from-application' && (
                 <section aria-labelledby="input-from-application-heading" className="space-y-6">
                   <h2 id="input-from-application-heading" className="text-2xl font-semibold">
                     Input from application
@@ -354,14 +344,14 @@ export default function AutomationConfig({ onContinue }: Props) {
                               </div>
                             </div>
                           )
-                        })()}
+                      })()}
 
-                      </div>
-                    )}
+                    </div>
+                  )}
                 </section>
-              </TabsContent>
+            )}
 
-              <TabsContent value="run-configuration" className="mt-6">
+            {activeTab === 'run-configuration' && (
                 <section aria-labelledby="run-configuration-heading" className="space-y-6">
                   <h2 id="run-configuration-heading" className="text-2xl font-semibold">Run Configuration</h2>
 
@@ -430,9 +420,9 @@ export default function AutomationConfig({ onContinue }: Props) {
                     </div>
                   </div>
                 </section>
-              </TabsContent>
+            )}
 
-              <TabsContent value="schedule" className="mt-6">
+            {activeTab === 'schedule' && (
                 <section aria-labelledby="schedule-heading" className="space-y-4">
                   <h2 id="schedule-heading" className="text-2xl font-semibold">Schedule Configuration</h2>
 
@@ -501,9 +491,8 @@ export default function AutomationConfig({ onContinue }: Props) {
                       ))}
                     </div>
                   )}
-                </section>
-              </TabsContent>
-            </Tabs>
+                 </section>
+            )}
 
             {/* Continue Button */}
             <div className="flex justify-end mt-8">
