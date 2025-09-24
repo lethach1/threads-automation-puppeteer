@@ -5,7 +5,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 // Tabs components no longer needed - using sidebar instead
-import { HelpCircle, Plus, Trash2, Copy } from 'lucide-react'
+import { HelpCircle, Plus, Trash2, Copy, Upload } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import DatePickerAndTimePickerDemo, { type DateTimeValue } from '@/components/ui/datetime-picker'
 import { type CsvRow } from '@/utils/csvReader'
@@ -23,6 +24,7 @@ type Props = {
 export default function AutomationConfig({ onContinue }: Props) {
   const [activeTab, setActiveTab] = useState('input-from-application')
   const [viewAsObject, setViewAsObject] = useState(false) // Toggle between table and object view
+  const [selectedScript, setSelectedScript] = useState('')
   
   // Separate state for each scenario
   const [scenarios, setScenarios] = useState({
@@ -165,6 +167,36 @@ export default function AutomationConfig({ onContinue }: Props) {
     { id: 'schedule', label: 'Schedule', icon: '📅' }
   ]
 
+  // Available automation scripts
+  const availableScripts = [
+    { id: 'posts-comment', name: 'Posts and Comments', description: 'Automate posting and commenting on threads' },
+    { id: 'login', name: 'Login Automation', description: 'Automate user login process' },
+    { id: 'interactive', name: 'Interactive Automation', description: 'Interactive automation with user input' },
+    { id: 'custom', name: 'Custom Script', description: 'Import your own custom automation script' }
+  ]
+
+  const handleImportCustomScript = async () => {
+    const api = window.api as any
+    if (!api?.selectFile) {
+      console.warn('File picker API is not available')
+      return
+    }
+
+    try {
+      const filePath = await api.selectFile()
+      if (filePath) {
+        console.log('Custom script selected:', filePath)
+        setSelectedScript('custom')
+        // Here you would typically load and parse the custom script
+        // For now, just show a success message
+        alert(`Custom script imported: ${filePath}`)
+      }
+    } catch (error) {
+      console.error('Failed to import custom script:', error)
+      alert('Failed to import custom script. Please try again.')
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="flex">
@@ -200,7 +232,40 @@ export default function AutomationConfig({ onContinue }: Props) {
                   <h2 id="input-from-application-heading" className="text-2xl font-semibold">
                     Input from application
                   </h2>
-                    {/* Use input Excel option */}
+
+                  {/* Automation Script Selection */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="script-select">
+                        Select Automation Script
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleImportCustomScript}
+                      >
+                        <Upload className="h-4 w-4" />
+                        Import Custom Script
+                      </Button>
+                    </div>
+                    
+                    <Select value={selectedScript} onValueChange={setSelectedScript}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose an automation script..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableScripts.map((script) => (
+                          <SelectItem key={script.id} value={script.id}>
+                            <span className="font-semibold">{script.name}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                  </div>
+
+                  {/* Use input Excel option */}
                      <div className="flex items-center space-x-3">
                        <Checkbox 
                          id="use-input-excel" 
