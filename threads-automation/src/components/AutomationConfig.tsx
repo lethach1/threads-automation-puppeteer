@@ -4,11 +4,12 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+// Select components removed - no longer needed
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { HelpCircle, Plus, Trash2 } from 'lucide-react'
+import { HelpCircle, Plus, Trash2, Copy } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
 import DatePickerAndTimePickerDemo, { type DateTimeValue } from '@/components/ui/datetime-picker'
-import { getCsvPreview, type CsvRow } from '@/utils/csvReader'
+import { type CsvRow } from '@/utils/csvReader'
 
 type Props = { 
   onContinue?: (config: {
@@ -22,17 +23,15 @@ type Props = {
 
 export default function AutomationConfig({ onContinue }: Props) {
   const [activeSidebar, setActiveSidebar] = useState('posts-comment')
+  // showAllRows removed - always show all rows now
+  const [viewAsObject, setViewAsObject] = useState(false) // Toggle between table and object view
   const [activeTab, setActiveTab] = useState('input-from-application')
   
   // Separate state for each scenario
   const [scenarios, setScenarios] = useState({
     'posts-comment': {
       useInputExcel: true,
-      writeOkStatus: false,
       filePath: '',
-      sheetId: '0',
-      readType: 'all-rows',
-      okStatusColumn: '',
       numThreads: 5,
       windowWidth: 800,
       windowHeight: 600,
@@ -42,11 +41,7 @@ export default function AutomationConfig({ onContinue }: Props) {
     },
     'login': {
       useInputExcel: true,
-      writeOkStatus: false,
       filePath: '',
-      sheetId: '0',
-      readType: 'all-rows',
-      okStatusColumn: '',
       numThreads: 5,
       windowWidth: 800,
       windowHeight: 600,
@@ -56,11 +51,7 @@ export default function AutomationConfig({ onContinue }: Props) {
     },
     'interactive': {
       useInputExcel: true,
-      writeOkStatus: false,
       filePath: '',
-      sheetId: '0',
-      readType: 'all-rows',
-      okStatusColumn: '',
       numThreads: '5',
       windowWidth: '800',
       windowHeight: '600',
@@ -113,23 +104,61 @@ export default function AutomationConfig({ onContinue }: Props) {
   }
 
   const handleFileSelect = async () => {
-    if (!window?.api?.selectFile) {
+    const api = window.api as any
+    if (!api?.selectFile) {
       console.warn('File picker API is not available')
       return
     }
-    const selectedFile = await window.api.selectFile()
+    const selectedFile = await api.selectFile()
     if (!selectedFile) return
     
     updateScenario('filePath', selectedFile)
     
-    // Auto-parse CSV if file ends with .csv
-    if (selectedFile.toLowerCase().endsWith('.csv')) {
+    // Reset preview state when new file is selected
+    setViewAsObject(false)
+    
+    // Auto-parse file if it's a supported format (CSV, XLSX, XLS, XLSM)
+    const fileExtension = selectedFile.toLowerCase().split('.').pop()
+    if (['csv', 'xlsx', 'xls', 'xlsm'].includes(fileExtension || '')) {
       try {
-        const csvData = await window.api.parseCsv(selectedFile)
+        const csvData = await api.parseCsv(selectedFile)
         updateScenario('csvData', csvData.rows)
       } catch (err) {
-        console.error('Failed to parse CSV:', err)
+        console.error('Failed to parse file:', err)
       }
+    }
+  }
+
+  // Group CSV data by profile name for object view
+  const getGroupedData = (csvData: CsvRow[]) => {
+    const groups: Record<string, CsvRow[]> = {}
+    
+    for (const row of csvData) {
+      // Find profile column (case-insensitive)
+      const rowKeys = Object.keys(row)
+      const profileKey = rowKeys.find(key => key.toLowerCase() === 'profile')
+      
+      if (profileKey) {
+        const profileName = (row[profileKey] || '').toString().trim()
+        if (profileName) {
+          if (!groups[profileName]) groups[profileName] = []
+          groups[profileName].push(row)
+        }
+      }
+    }
+    
+    return groups
+  }
+
+  // Copy raw object to clipboard
+  const handleCopyToClipboard = async (data: any) => {
+    try {
+      const jsonString = JSON.stringify(data, null, 2)
+      await navigator.clipboard.writeText(jsonString)
+      console.log('Raw object copied to clipboard!')
+      // You could add a toast notification here
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err)
     }
   }
 
@@ -206,118 +235,127 @@ export default function AutomationConfig({ onContinue }: Props) {
                           <div className="flex items-center space-x-2">
                             <Input
                               type="text"
-                              placeholder="Select a CSV file..."
+                              placeholder="Select a CSV or Excel file..."
                               value={currentScenario.filePath}
                               onChange={(e) => updateScenario('filePath', e.target.value)}
                               className="flex-1"
-                              aria-label="Selected CSV file path"
+                              aria-label="Selected file path"
                             />
                             <Button 
                               variant="outline"
                               onClick={handleFileSelect}
                               className="h-9 px-3"
-                              aria-label="Select CSV file"
+                              aria-label="Select CSV or Excel file"
                             >
                               Select
                             </Button>
                           </div>
                         </div>
 
-                        {/* CSV Preview */}
+                        {/* Data Preview */}
                         {currentScenario.csvData.length > 0 && (() => {
-                          const preview = getCsvPreview({ 
-                            headers: Object.keys(currentScenario.csvData[0] || {}), 
-                            rows: currentScenario.csvData, 
-                            totalRows: currentScenario.csvData.length 
-                          })
+                          const fileExtension = currentScenario.filePath.toLowerCase().split('.').pop()
+                          const fileType = fileExtension === 'csv' ? 'CSV' : 
+                                          ['xlsx', 'xls', 'xlsm'].includes(fileExtension || '') ? 'Excel' : 'Data'
+                          const groupedData = getGroupedData(currentScenario.csvData)
+                          
                           return (
                             <div className="mt-4">
-                              <h4 className="text-sm font-medium mb-2">CSV Preview ({preview.totalRows} rows)</h4>
-                              <div className="border rounded-md overflow-auto max-h-48">
-                                <table className="w-full text-xs">
-                                  <thead className="bg-muted">
-                                    <tr>
-                                      {preview.headers.map(header => (
-                                        <th key={header} className="px-2 py-1 text-left font-medium">{header}</th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {preview.rows.map((row, i) => (
-                                      <tr key={i} className="border-t">
-                                        {Object.values(row).map((cell, j) => (
-                                          <td key={j} className="px-2 py-1 truncate max-w-32">{cell}</td>
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-sm font-medium">
+                                  {fileType} Preview ({currentScenario.csvData.length} rows total)
+                                  {viewAsObject && (
+                                    <span className="text-xs text-muted-foreground ml-2">
+                                      - Grouped by profile ({Object.keys(groupedData).length} profiles)
+                                    </span>
+                                  )}
+                                </h4>
+                                <div className="flex items-center gap-3">
+                                  <div className="flex items-center gap-2">
+                                    <Label htmlFor="view-toggle" className="text-xs text-muted-foreground">
+                                      {viewAsObject ? 'Object View' : 'Table View'}
+                                    </Label>
+                                    <Switch
+                                      id="view-toggle"
+                                      checked={viewAsObject}
+                                      onCheckedChange={setViewAsObject}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className="border rounded-md overflow-auto bg-background max-h-96">
+                                {viewAsObject ? (
+                                  // Object view - raw JSON format for dev
+                                  <div className="p-4">
+                                    {Object.keys(groupedData).length === 0 ? (
+                                      <div className="text-center text-muted-foreground py-8">
+                                        <p>No profile column found in data</p>
+                                        <p className="text-xs mt-1">Data will be processed as-is</p>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-4">
+                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                                          <div className="flex items-center justify-between">
+                                            <div>
+                                              <h5 className="font-medium text-sm text-blue-800 mb-1">
+                                                📋 Raw Object Data (for dev mapping)
+                                              </h5>
+                                              <p className="text-xs text-blue-600">
+                                                Copy this object structure to use in your automation scripts
+                                              </p>
+                                            </div>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleCopyToClipboard(groupedData)}
+                                              className="h-7 px-2 text-xs"
+                                              title="Copy raw object to clipboard"
+                                            >
+                                              <Copy className="h-3 w-3 mr-1" />
+                                              Copy
+                                            </Button>
+                                          </div>
+                                        </div>
+                                        
+                                        <div className="bg-gray-200 text-black p-4 rounded-lg font-mono text-xs overflow-auto">
+                                          <pre>{JSON.stringify(groupedData, null, 2)}</pre>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  // Table view - all rows
+                                  <table className="w-full text-xs">
+                                    <thead className="bg-muted sticky top-0 z-10">
+                                      <tr>
+                                        {Object.keys(currentScenario.csvData[0] || {}).map(header => (
+                                          <th key={header} className="px-3 py-2 text-left font-medium border-r border-border last:border-r-0">
+                                            {header}
+                                          </th>
                                         ))}
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                                {preview.hasMore && (
-                                  <div className="px-2 py-1 text-xs text-muted-foreground bg-muted">
-                                    ... and {preview.remainingRows} more rows
-                                  </div>
+                                    </thead>
+                                    <tbody>
+                                      {currentScenario.csvData.map((row, i) => (
+                                        <tr key={i} className="border-t border-border hover:bg-muted/50">
+                                          {Object.values(row).map((cell, j) => (
+                                            <td key={j} className="px-3 py-2 border-r border-border last:border-r-0">
+                                              <div className="max-w-40 truncate" title={String(cell || '')}>
+                                                {cell}
+                                              </div>
+                                            </td>
+                                          ))}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
                                 )}
                               </div>
                             </div>
                           )
                         })()}
 
-                        {/* Sheet ID and Read Type */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="space-y-2">
-                            <Label htmlFor="sheet-id" className="text-sm font-medium">
-                              Sheet ID
-                            </Label>
-                            <Input
-                              id="sheet-id"
-                              type="text"
-                              value={currentScenario.sheetId}
-                              onChange={(e) => updateScenario('sheetId', e.target.value)}
-                              placeholder="0"
-                            />
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label htmlFor="read-type" className="text-sm font-medium">
-                              Read Type
-                            </Label>
-                            <Select value={currentScenario.readType} onValueChange={(value) => updateScenario('readType', value)}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select read type" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="all-rows">Each profile reads all rows</SelectItem>
-                                <SelectItem value="single-row">Each profile reads single row</SelectItem>
-                                <SelectItem value="custom">Custom read pattern</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-
-                        {/* Write OK status option */}
-                         <div className="flex items-center space-x-3">
-                           <Checkbox 
-                             id="write-ok-status" 
-                             checked={currentScenario.writeOkStatus}
-                             onCheckedChange={(checked) => updateScenario('writeOkStatus', checked === true)}
-                           />
-                          <Label 
-                            htmlFor="write-ok-status" 
-                            className="text-base font-normal"
-                          >
-                            Write 'OK' status to the Excel file upon completion
-                          </Label>
-                          <div className="ml-auto">
-                            <Input
-                              type="text"
-                              value={currentScenario.okStatusColumn}
-                              onChange={(e) => updateScenario('okStatusColumn', e.target.value)}
-                              placeholder="Column (e.g., Z)"
-                              className="w-28 h-8 text-sm"
-                              aria-label="OK status column"
-                            />
-                          </div>
-                        </div>
                       </div>
                     )}
                 </section>

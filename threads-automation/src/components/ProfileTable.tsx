@@ -4,6 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ArrowUpDown, FolderOpen } from 'lucide-react'
 import { getListProfiles } from '@/services/profileApi'
+// getRowValue no longer needed with flexible headers
 // CSV is now provided by config screen; no direct CSV parsing here
 
 type Profile = {
@@ -39,7 +40,7 @@ export default function ProfileTable({ onBack, settings, csvData }: Props) {
   const [renamedNames, setRenamedNames] = useState<Map<string, string>>(new Map())
   const inputRef = useRef<HTMLInputElement | null>(null)
   // Removed direct CSV upload, inputs come from config
-  const [inputByProfileId, setInputByProfileId] = useState<Map<string, { postText?: string; commentText?: string; mediaPath?: string; tag?: string; schedule?: string; items?: Array<{ postText?: string; commentText?: string; mediaPath?: string; tag?: string; schedule?: string }> }>>(new Map())
+  const [inputByProfileId, setInputByProfileId] = useState<Map<string, { [key: string]: any; items?: Array<{ [key: string]: any }> }>>(new Map())
 
   useEffect(() => {
     if (editingId && inputRef.current) inputRef.current.focus()
@@ -61,19 +62,29 @@ export default function ProfileTable({ onBack, settings, csvData }: Props) {
     fetchProfiles()
   }, [])
 
+
   // When csvData is provided from the config screen, auto-map it to inputs
   useEffect(() => {
     if (!csvData || csvData.length === 0 || profiles.length === 0) return
     try {
-      const map = new Map<string, { postText?: string; commentText?: string; mediaPath?: string; tag?: string; schedule?: string; items?: Array<{ postText?: string; commentText?: string; mediaPath?: string; tag?: string; schedule?: string }> }>()
+      const map = new Map<string, { [key: string]: any; items?: Array<{ [key: string]: any }> }>()
       const nameToId = new Map<string, string>()
       for (const p of profiles) {
         nameToId.set((p.displayName || p.name || '').trim(), p.id)
       }
-      // Group by profile name
+      // Group by profile name (flexible header matching)
       const groups: Record<string, Array<Record<string, string>>> = {}
       for (const row of csvData) {
-        const profileName = (row['profile'] || row['Profile'] || '').trim()
+        // Try to find profile column with flexible matching
+        let profileName = ''
+        const rowKeys = Object.keys(row)
+        
+        // Look for profile column (case-insensitive)
+        const profileKey = rowKeys.find(key => key.toLowerCase() === 'profile')
+        if (profileKey) {
+          profileName = (row[profileKey] || '').toString().trim()
+        }
+        
         if (!profileName) continue
         if (!groups[profileName]) groups[profileName] = []
         groups[profileName].push(row)
@@ -81,13 +92,21 @@ export default function ProfileTable({ onBack, settings, csvData }: Props) {
       Object.entries(groups).forEach(([profileName, rows]) => {
         const id = nameToId.get(profileName.trim())
         if (!id) return
-        const items = rows.map((r) => ({
-          postText: r['post'] || r['postText'] || '',
-          commentText: r['comment'] || r['commentText'] || r['comments'] || '',
-          tag: r['tag'] || r['tags'] || '',
-          mediaPath: r['image'] || r['mediaPath'] || '',
-          schedule: r['Schedule'] || r['schedule'] || ''
-        }))
+        
+        // Get all available headers from the first row (excluding profile column)
+        const availableHeaders = rows.length > 0 ? Object.keys(rows[0]).filter(key => 
+          key.toLowerCase() !== 'profile'
+        ) : []
+        
+        const items = rows.map((r) => {
+          // Create dynamic object with all available columns
+          const dynamicData: any = {}
+          availableHeaders.forEach(header => {
+            dynamicData[header] = r[header] || ''
+          })
+          return dynamicData
+        })
+        
         const first = items[0] || {}
         map.set(id, { ...first, items })
       })

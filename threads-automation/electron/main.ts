@@ -97,10 +97,12 @@ ipcMain.handle('select-directory', async () => {
 // IPC: Open file picker and return selected file path
 ipcMain.handle('select-file', async () => {
   const result = await dialog.showOpenDialog({
-    title: 'Select a CSV file',
+    title: 'Select a CSV or Excel file',
     properties: ['openFile'],
     filters: [
+      { name: 'Data Files', extensions: ['csv', 'xlsx', 'xls', 'xlsm'] },
       { name: 'CSV Files', extensions: ['csv'] },
+      { name: 'Excel Files', extensions: ['xlsx', 'xls', 'xlsm'] },
       { name: 'All Files', extensions: ['*'] }
     ]
   })
@@ -112,53 +114,63 @@ ipcMain.handle('select-file', async () => {
   return result.filePaths[0]
 })
 
-// IPC: Parse CSV file and return data
+// IPC: Parse CSV/Excel file and return data using SheetJS
 ipcMain.handle('parse-csv', async (_event, filePath: string) => {
   try {
     const fs = await import('fs')
+    const XLSX = await import('xlsx')
     
-    const fileContent = fs.readFileSync(filePath, 'utf-8')
-    const lines = fileContent.split('\n').filter(line => line.trim())
+    // Get file extension to determine file type
+    const fileExtension = filePath.toLowerCase().split('.').pop()
     
-    if (lines.length === 0) {
+    let workbook: any
+    if (fileExtension === 'csv') {
+      // For CSV files, read as UTF-8 text
+      const fileContent = fs.readFileSync(filePath, 'utf-8')
+      workbook = XLSX.read(fileContent, { type: 'string' })
+    } else if (['xlsx', 'xls', 'xlsm'].includes(fileExtension || '')) {
+      // For Excel files, read as buffer
+      const fileBuffer = fs.readFileSync(filePath)
+      workbook = XLSX.read(fileBuffer, { type: 'buffer' })
+    } else {
+      throw new Error(`Unsupported file format: ${fileExtension}`)
+    }
+    
+    // Get the first worksheet
+    const sheetName = workbook.SheetNames[0]
+    if (!sheetName) {
       return { headers: [], rows: [], totalRows: 0 }
     }
     
-    // Better CSV parsing that handles commas in values
-    const parseCsvLine = (line: string): string[] => {
-      const result: string[] = []
-      let current = ''
-      let inQuotes = false
-      
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i]
-        
-        if (char === '"') {
-          inQuotes = !inQuotes
-        } else if (char === ',' && !inQuotes) {
-          result.push(current.trim())
-          current = ''
-        } else {
-          current += char
-        }
-      }
-      result.push(current.trim())
-      return result
+    const worksheet = workbook.Sheets[sheetName]
+    
+    // Convert worksheet to JSON array
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+      header: 1,
+      defval: '',
+      raw: false // Convert all values to strings
+    }) as any[][]
+    
+    if (jsonData.length === 0) {
+      return { headers: [], rows: [], totalRows: 0 }
     }
     
-    const headers = parseCsvLine(lines[0])
+    // First row is headers
+    const headers = jsonData[0].map((h: any) => String(h || '').trim())
     
-    const rows = lines.slice(1).map((line) => {
-      const values = parseCsvLine(line)
-      const row: Record<string, string> = {}
-      headers.forEach((header, i) => {
-        row[header] = values[i] || ''
+    // Remaining rows are data
+    const rows = jsonData.slice(1).map((row: any[]) => {
+      const rowData: Record<string, string> = {}
+      headers.forEach((header, index) => {
+        const value = row[index]
+        rowData[header] = String(value || '').trim()
       })
-      return row
+      return rowData
     })
+    
     return { headers, rows, totalRows: rows.length }
   } catch (error) {
-    console.error('❌ Failed to parse CSV:', error)
+    console.error('❌ Failed to parse file:', error)
     throw error
   }
 })
