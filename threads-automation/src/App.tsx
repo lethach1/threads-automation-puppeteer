@@ -9,6 +9,7 @@ type AutomationSettings = {
   scalePercent: number
   numThreads: number
   csvData?: Array<Record<string, string>>
+  selectedScenario?: string
 }
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
           onBack={() => setView('config')} 
           settings={settings}
           csvData={settings.csvData}
+          selectedScenario={settings.selectedScenario}
         />
       </div>
     )

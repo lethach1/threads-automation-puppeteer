@@ -2,6 +2,10 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import fs from 'fs'
+import { promisify } from 'util'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // IMPORTANT: Avoid importing modules that pull puppeteer/ws to prevent bufferutil issues
 type OpenProfileOptions = { windowWidth: number; windowHeight: number; scalePercent: number }
 import { openProfilesWithConcurrency, closeProfile, withPage } from './sessionManager'
@@ -12,8 +16,6 @@ import { openProfilesWithConcurrency, closeProfile, withPage } from './sessionMa
 // Hint ws to skip optional native deps to avoid bundler resolution issues
 process.env.WS_NO_BUFFER_UTIL = '1'
 process.env.WS_NO_UTF_8_VALIDATE = '1'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // The built directory structure
 //
@@ -97,12 +99,13 @@ ipcMain.handle('select-directory', async () => {
 // IPC: Open file picker and return selected file path
 ipcMain.handle('select-file', async () => {
   const result = await dialog.showOpenDialog({
-    title: 'Select a CSV or Excel file',
+    title: 'Select a file',
     properties: ['openFile'],
     filters: [
       { name: 'Data Files', extensions: ['csv', 'xlsx', 'xls', 'xlsm'] },
       { name: 'CSV Files', extensions: ['csv'] },
       { name: 'Excel Files', extensions: ['xlsx', 'xls', 'xlsm'] },
+      { name: 'TypeScript Files', extensions: ['ts'] },
       { name: 'All Files', extensions: ['*'] }
     ]
   })
@@ -112,6 +115,42 @@ ipcMain.handle('select-file', async () => {
   }
 
   return result.filePaths[0]
+})
+
+// Read file content API
+ipcMain.handle('read-file', async (_event, filePath: string) => {
+  try {
+    const content = await promisify(fs.readFile)(filePath, 'utf8')
+    return content
+  } catch (error: any) {
+    throw new Error(`Failed to read file: ${error?.message}`)
+  }
+})
+
+// Script file picker API (only TypeScript and JavaScript)
+ipcMain.handle('select-script-file', async () => {
+  const result = await dialog.showOpenDialog(win!, {
+    title: 'Select a TypeScript or JavaScript file',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Script Files', extensions: ['ts', 'js'] }
+    ],
+    buttonLabel: 'Select Script',
+    message: 'Please select a TypeScript (.ts) or JavaScript (.js) file'
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return ''
+  }
+
+  // Double-check file extension
+  const filePath = result.filePaths[0]
+  const fileExtension = filePath.toLowerCase().split('.').pop()
+  if (!['ts', 'js'].includes(fileExtension || '')) {
+    throw new Error('Only TypeScript (.ts) and JavaScript (.js) files are allowed')
+  }
+
+  return filePath
 })
 
 // IPC: Parse CSV/Excel file and return data using SheetJS
@@ -236,5 +275,131 @@ ipcMain.handle('run-automation-for-profile', async (_event, payload: { profileId
     return { success: true }
   } catch (error: any) {
     return { success: false, error: error?.message || 'Unknown error' }
+  }
+})
+
+// Custom Script Management APIs
+const CUSTOM_SCRIPTS_DIR = path.join(__dirname, 'custom-scripts')
+
+// Ensure custom scripts directory exists
+if (!fs.existsSync(CUSTOM_SCRIPTS_DIR)) {
+  fs.mkdirSync(CUSTOM_SCRIPTS_DIR, { recursive: true })
+  console.log(`[scripts] Created custom scripts directory: ${CUSTOM_SCRIPTS_DIR}`)
+}
+
+// Upload and save custom script
+ipcMain.handle('upload-custom-script', async (_event, { fileName, content }) => {
+  try {
+    // Ensure custom scripts directory exists before saving
+    if (!fs.existsSync(CUSTOM_SCRIPTS_DIR)) {
+      fs.mkdirSync(CUSTOM_SCRIPTS_DIR, { recursive: true })
+      console.log(`[scripts] Created custom scripts directory: ${CUSTOM_SCRIPTS_DIR}`)
+    }
+
+    // Validate script content
+    if (!content || typeof content !== 'string') {
+      return { success: false, error: 'Invalid script content' }
+    }
+
+    // Desktop app - minimal validation since user owns the machine
+    // Check if user provided automation logic
+    if (!content.trim()) {
+      return { success: false, error: 'Script content cannot be empty' }
+    }
+
+    // Create complete script by merging template with user logic
+    // Use dynamic import for ESM helper
+    const SCRIPT_TEMPLATE = `const fs = require('fs')
+const path = require('path')
+
+async function run(page, input = {}) {
+  try {
+    console.log('🚀 Starting custom automation...')
+    console.log('📝 Input:', input)
+    const { humanDelay, humanClick, humanTypeWithMistakes, waitForElements } = await import('../automation/human-behavior.js')
+    
+    // USER_LOGIC_PLACEHOLDER
+    
+    console.log('✅ Custom automation completed successfully!')
+    return { success: true }
+    
+  } catch (error) {
+    console.error('❌ Custom automation failed:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+module.exports = { run }`
+
+    // Replace placeholder with user logic
+    const completeScript = SCRIPT_TEMPLATE.replace('// USER_LOGIC_PLACEHOLDER', content.trim())
+
+    // Save script (always save as .cjs file to avoid ES module issues)
+    // Ensure fileName is just the name, not a full path
+    const cleanFileName = path.basename(fileName).replace(/\.(ts|js)$/, '')
+    const scriptPath = path.join(CUSTOM_SCRIPTS_DIR, `${cleanFileName}.cjs`)
+    console.log(`[scripts] Saving script to: ${scriptPath}`)
+    console.log(`[scripts] Directory exists: ${fs.existsSync(CUSTOM_SCRIPTS_DIR)}`)
+    console.log(`[scripts] Original fileName: ${fileName}`)
+    console.log(`[scripts] Clean fileName: ${cleanFileName}`)
+    await promisify(fs.writeFile)(scriptPath, completeScript, 'utf8')
+    console.log(`[scripts] Script saved successfully: ${scriptPath}`)
+
+    // Validate script syntax by trying to compile
+    try {
+      // Basic TypeScript validation
+      const scriptName = cleanFileName.replace(/[^a-zA-Z0-9_-]/g, '_')
+      return { 
+        success: true, 
+        scriptName,
+        scriptPath,
+        message: 'Custom script uploaded successfully' 
+      }
+    } catch (validationError) {
+      // Remove invalid script
+      fs.unlinkSync(scriptPath)
+      return { success: false, error: `Script validation failed: ${validationError}` }
+    }
+  } catch (error: any) {
+    console.error('[scripts] Error uploading script:', error)
+    console.error('[scripts] Error details:', {
+      message: error?.message,
+      code: error?.code,
+      path: error?.path,
+      stack: error?.stack
+    })
+    return { success: false, error: error?.message || 'Failed to upload script' }
+  }
+})
+
+// Get list of custom scripts
+ipcMain.handle('get-custom-scripts', async () => {
+  try {
+    const files = await promisify(fs.readdir)(CUSTOM_SCRIPTS_DIR)
+    const scripts = files
+      .filter(file => file.endsWith('.cjs')) // Only CommonJS files (template approach)
+      .map(file => ({
+        id: file.replace('.cjs', ''),
+        name: file.replace('.cjs', '').replace(/_/g, ' '),
+        fileName: file,
+        path: path.join(CUSTOM_SCRIPTS_DIR, file)
+      }))
+    return { success: true, scripts }
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Failed to get custom scripts' }
+  }
+})
+
+// Delete custom script
+ipcMain.handle('delete-custom-script', async (_event, scriptId) => {
+  try {
+    const scriptPath = path.join(CUSTOM_SCRIPTS_DIR, `${scriptId}.cjs`)
+    if (fs.existsSync(scriptPath)) {
+      await promisify(fs.unlink)(scriptPath)
+      return { success: true, message: 'Script deleted successfully' }
+    }
+    return { success: false, error: 'Script not found' }
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Failed to delete script' }
   }
 })

@@ -25,9 +25,10 @@ type Props = {
     numThreads: number
   }
   csvData?: Array<Record<string, string>>
+  selectedScenario?: string
 }
 
-export default function ProfileTable({ onBack, settings, csvData }: Props) {
+export default function ProfileTable({ onBack, settings, csvData, selectedScenario }: Props) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [sortAsc, setSortAsc] = useState(true)
@@ -189,7 +190,7 @@ export default function ProfileTable({ onBack, settings, csvData }: Props) {
             const input = inputByProfileId.get(profileId) || {}
             const autoRes = await window.automationApi.runAutomationForProfile({
               profileId,
-              scenario: 'postAndComment',
+              scenario: selectedScenario || 'postAndComment',
               input
             })
             if (!autoRes?.success) {

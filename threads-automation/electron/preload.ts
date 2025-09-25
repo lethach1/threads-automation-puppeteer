@@ -48,6 +48,22 @@ contextBridge.exposeInMainWorld('api', {
       console.error('Failed to parse CSV:', error)
       throw error
     }
+  },
+  readFile: async (filePath: string): Promise<string> => {
+    try {
+      return await ipcRenderer.invoke('read-file', filePath)
+    } catch (error) {
+      console.error('Failed to read file:', error)
+      throw error
+    }
+  },
+  selectScriptFile: async (): Promise<string> => {
+    try {
+      return await ipcRenderer.invoke('select-script-file')
+    } catch (error) {
+      console.error('Failed to select script file:', error)
+      throw error
+    }
   }
 })
 
@@ -79,6 +95,31 @@ contextBridge.exposeInMainWorld('automationApi', {
   closeProfile: async (profileId: string) => {
     try {
       return await ipcRenderer.invoke('close-profile', profileId)
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unknown error' }
+    }
+  }
+})
+
+// Custom Script Management API
+contextBridge.exposeInMainWorld('customScriptApi', {
+  uploadScript: async (fileName: string, content: string) => {
+    try {
+      return await ipcRenderer.invoke('upload-custom-script', { fileName, content })
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unknown error' }
+    }
+  },
+  getCustomScripts: async () => {
+    try {
+      return await ipcRenderer.invoke('get-custom-scripts')
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unknown error' }
+    }
+  },
+  deleteCustomScript: async (scriptId: string) => {
+    try {
+      return await ipcRenderer.invoke('delete-custom-script', scriptId)
     } catch (error: any) {
       return { success: false, error: error?.message || 'Unknown error' }
     }

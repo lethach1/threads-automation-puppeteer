@@ -3,6 +3,7 @@ import path from 'node:path'
 import electron from 'vite-plugin-electron/simple'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import fs from 'fs'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -14,6 +15,42 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    {
+      name: 'copy-automation',
+      buildStart() {
+        // Copy automation folder to dist-electron during build
+        const sourceDir = path.join(__dirname, 'electron', 'automation')
+        const destDir = path.join(__dirname, 'dist-electron', 'automation')
+        
+        if (fs.existsSync(sourceDir)) {
+          // Ensure destination directory exists
+          if (!fs.existsSync(destDir)) {
+            fs.mkdirSync(destDir, { recursive: true })
+          }
+          
+          // Copy files
+          const copyRecursive = (src: string, dest: string) => {
+            const entries = fs.readdirSync(src, { withFileTypes: true })
+            for (const entry of entries) {
+              const srcPath = path.join(src, entry.name)
+              const destPath = path.join(dest, entry.name)
+              
+              if (entry.isDirectory()) {
+                if (!fs.existsSync(destPath)) {
+                  fs.mkdirSync(destPath, { recursive: true })
+                }
+                copyRecursive(srcPath, destPath)
+              } else {
+                fs.copyFileSync(srcPath, destPath)
+              }
+            }
+          }
+          
+          copyRecursive(sourceDir, destDir)
+          console.log('✅ Copied automation folder to dist-electron')
+        }
+      }
+    },
     electron({
       main: {
         // Shortcut of `build.lib.entry`.

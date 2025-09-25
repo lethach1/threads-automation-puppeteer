@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 // Removed Card wrappers; using plain sections instead
 import { Checkbox } from '@/components/ui/checkbox'
@@ -18,6 +18,7 @@ type Props = {
     scalePercent: number
     numThreads: number
     csvData?: CsvRow[]
+    selectedScenario?: string
   }) => void 
 }
 
@@ -25,10 +26,18 @@ export default function AutomationConfig({ onContinue }: Props) {
   const [activeTab, setActiveTab] = useState('input-from-application')
   const [viewAsObject, setViewAsObject] = useState(false) // Toggle between table and object view
   const [selectedScript, setSelectedScript] = useState('')
+  const [customScripts, setCustomScripts] = useState<Array<{id: string, name: string, fileName: string}>>([])
+  const [showScriptUpload, setShowScriptUpload] = useState(false)
+  const [scriptContent, setScriptContent] = useState('')
+  const [scriptFileName, setScriptFileName] = useState('')
+  const [scriptValidation, setScriptValidation] = useState<{
+    isValid: boolean
+    errors: string[]
+  }>({ isValid: true, errors: [] })
   
   // Separate state for each scenario
   const [scenarios, setScenarios] = useState({
-    'posts-comment': {
+    'postAndComment': {
       useInputExcel: true,
       filePath: '',
       numThreads: 5,
@@ -62,15 +71,15 @@ export default function AutomationConfig({ onContinue }: Props) {
   
   type ScheduleItem = { id: string, value: DateTimeValue, saved: boolean }
   
-  // Get current scenario data - using posts-comment as default since we removed scenario selection
-  const currentScenario = scenarios['posts-comment']
+  // Get current scenario data - using postAndComment as default since we removed scenario selection
+  const currentScenario = scenarios['postAndComment']
 
   // Helper function to update scenario data
   const updateScenario = (key: string, value: any) => {
     setScenarios(prev => ({
       ...prev,
-      'posts-comment': {
-        ...prev['posts-comment'],
+      'postAndComment': {
+        ...prev['postAndComment'],
         [key]: value
       }
     }))
@@ -167,35 +176,177 @@ export default function AutomationConfig({ onContinue }: Props) {
     { id: 'schedule', label: 'Schedule', icon: '📅' }
   ]
 
-  // Available automation scripts
+  // Available automation scripts (built-in + custom)
   const availableScripts = [
-    { id: 'posts-comment', name: 'Posts and Comments', description: 'Automate posting and commenting on threads' },
+    { id: 'postAndComment', name: 'Posts and Comments', description: 'Automate posting and commenting on threads' },
     { id: 'login', name: 'Login Automation', description: 'Automate user login process' },
     { id: 'interactive', name: 'Interactive Automation', description: 'Interactive automation with user input' },
-    { id: 'custom', name: 'Custom Script', description: 'Import your own custom automation script' }
+    ...customScripts.map(script => ({
+      id: script.id,
+      name: script.name,
+      description: `Custom script: ${script.name}`
+    }))
   ]
+
+  // Load custom scripts on component mount
+  const loadCustomScripts = async () => {
+    try {
+      if (window.customScriptApi) {
+        const result = await window.customScriptApi.getCustomScripts()
+        if (result.success) {
+          setCustomScripts(result.scripts || [])
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load custom scripts:', error)
+    }
+  }
+
+  // Load custom scripts when component mounts
+  useEffect(() => {
+    loadCustomScripts()
+  }, [])
 
   const handleImportCustomScript = async () => {
     const api = window.api as any
-    if (!api?.selectFile) {
-      console.warn('File picker API is not available')
+    if (!api?.selectScriptFile) {
+      console.warn('Script file picker API is not available')
       return
     }
 
     try {
-      const filePath = await api.selectFile()
+      const filePath = await api.selectScriptFile()
       if (filePath) {
-        console.log('Custom script selected:', filePath)
-        setSelectedScript('custom')
-        // Here you would typically load and parse the custom script
-        // For now, just show a success message
-        alert(`Custom script imported: ${filePath}`)
+        // Read file content
+        const content = await api.readFile(filePath)
+        const fileName = filePath.split(/[\\\/]/).pop()?.replace(/\.(ts|js)$/, '') || 'custom-script'
+        
+        setScriptContent(content)
+        setScriptFileName(fileName)
+        setShowScriptUpload(true)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to import custom script:', error)
-      alert('Failed to import custom script. Please try again.')
+      const errorMessage = error?.message || 'Failed to import custom script'
+      if (errorMessage.includes('Only TypeScript') && errorMessage.includes('JavaScript')) {
+        alert('Only TypeScript (.ts) and JavaScript (.js) files are allowed')
+      } else {
+        alert(`Failed to import custom script: ${errorMessage}`)
+      }
     }
   }
+
+  const handleUploadScript = async () => {
+    try {
+      if (!window.customScriptApi) {
+        alert('Custom script API not available')
+        return
+      }
+
+      const result = await window.customScriptApi.uploadScript(scriptFileName, scriptContent)
+      if (result.success) {
+        alert('Custom script uploaded successfully!')
+        setShowScriptUpload(false)
+        setScriptContent('')
+        setScriptFileName('')
+        await loadCustomScripts() // Reload the list
+      } else {
+        alert(`Failed to upload script: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Failed to upload script:', error)
+      alert('Failed to upload script. Please try again.')
+    }
+  }
+
+  const handleDeleteCustomScript = async (scriptId: string) => {
+    try {
+      if (!window.customScriptApi) {
+        alert('Custom script API not available')
+        return
+      }
+
+      const result = await window.customScriptApi.deleteCustomScript(scriptId)
+      if (result.success) {
+        await loadCustomScripts() // Reload the list
+      } else {
+        alert(`Failed to delete script: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Failed to delete script:', error)
+      alert('Failed to delete script. Please try again.')
+    }
+  }
+
+  // Get script template (user logic only)
+  const getScriptTemplate = () => {
+    return `// Custom Automation Logic
+// Just write your automation steps here - all functions are imported automatically
+
+// Example: Navigate to a website
+await page.goto('https://example.com', { waitUntil: 'networkidle2' })
+await humanDelay(2000, 4000)
+
+// Example: Click on an element
+await waitForElements(page, 'button')
+await humanClick(page, 'button')
+
+// Example: Type text
+await humanTypeWithMistakes(page, 'input', input.text || 'Hello World')
+
+// Example: Use file system
+if (fs.existsSync(input.filePath)) {
+  console.log('File exists:', input.filePath)
+}
+
+// Available functions (imported automatically):
+// - humanDelay(min, max): Random delay between min and max milliseconds
+// - humanClick(page, selector): Human-like click with random delay
+// - humanTypeWithMistakes(page, selector, text): Type text with human-like mistakes
+// - waitForElements(page, selector): Wait for elements to appear
+// - console.log(): For debugging
+
+// Available modules (imported automatically):
+// - fs: File system operations (existsSync, readFileSync, etc.)
+// - path: Path utilities (join, dirname, etc.)`
+  }
+
+  // Validate script content (user logic only)
+  const validateScript = (content: string) => {
+    const errors: string[] = []
+    
+    if (!content.trim()) {
+      errors.push('Script content cannot be empty')
+      return { isValid: false, errors }
+    }
+    
+    // Warn about imports (should not be used - backend handles them)
+    if (content.includes('import ') || content.includes('require(')) {
+      errors.push('Warning: Avoid imports - backend handles all dependencies')
+    }
+    
+    // Warn about function definitions (should not define run function)
+    if (content.includes('async function run') || content.includes('function run')) {
+      errors.push('Warning: Do not define run function - backend provides it')
+    }
+    
+    // Warn about module.exports (should not export)
+    if (content.includes('module.exports')) {
+      errors.push('Warning: Do not export - backend handles module.exports')
+    }
+    
+    return { isValid: errors.length === 0, errors }
+  }
+
+  // Update validation when script content changes
+  useEffect(() => {
+    if (scriptContent) {
+      const validation = validateScript(scriptContent)
+      setScriptValidation(validation)
+    } else {
+      setScriptValidation({ isValid: true, errors: [] })
+    }
+  }, [scriptContent])
 
   return (
     <div className="min-h-screen bg-background">
@@ -239,15 +390,25 @@ export default function AutomationConfig({ onContinue }: Props) {
                       <Label htmlFor="script-select">
                         Select Automation Script
                       </Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleImportCustomScript}
-                      >
-                        <Upload className="h-4 w-4" />
-                        Import Custom Script
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => loadCustomScripts()}
+                        >
+                          🔄 Refresh
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleImportCustomScript}
+                        >
+                          <Upload className="h-4 w-4" />
+                          Import Custom Script
+                        </Button>
+                      </div>
                     </div>
                     
                     <Select value={selectedScript} onValueChange={setSelectedScript}>
@@ -256,12 +417,29 @@ export default function AutomationConfig({ onContinue }: Props) {
                       </SelectTrigger>
                       <SelectContent>
                         {availableScripts.map((script) => (
-                          <SelectItem key={script.id} value={script.id}>
-                            <span className="font-semibold">{script.name}</span>
-                          </SelectItem>
+                          <div key={script.id} className="relative">
+                            <SelectItem value={script.id} className="pr-12">
+                              <span className="font-semibold pr-2">{script.name}</span>
+                            </SelectItem>
+                            {customScripts.some(cs => cs.id === script.id) && (
+                              <button
+                                className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-red-100 rounded flex items-center justify-center z-10"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  if (confirm('Are you sure you want to delete this custom script?')) {
+                                    handleDeleteCustomScript(script.id)
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-3 w-3 text-red-500 hover:text-red-700" />
+                              </button>
+                            )}
+                          </div>
                         ))}
                       </SelectContent>
                     </Select>
+
                     
                   </div>
 
@@ -559,37 +737,143 @@ export default function AutomationConfig({ onContinue }: Props) {
                  </section>
             )}
 
-            {/* Continue Button */}
-            <div className="flex justify-end mt-8">
-              <Button 
-                type="button"
-                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2" 
+             {/* Continue Button */}
+             <div className="flex justify-end mt-8">
+               <Button 
+                 type="button"
+                 className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2" 
+                 onClick={() => {
+                   // Check if script is selected
+                   if (!selectedScript) {
+                     alert('Please select an automation script before continuing.')
+                     return
+                   }
+
+                   const toInt = (v: unknown, fallback: number) => {
+                     const s = String(v ?? '')
+                     const n = parseInt(s.replace(/\D+/g, ''), 10)
+                     return Number.isFinite(n) ? n : fallback
+                   }
+                   const width = toInt(currentScenario.windowWidth, 800)
+                   const height = toInt(currentScenario.windowHeight, 600)
+                   const scale = toInt(currentScenario.scalePercent, 100)
+                   const threads = toInt(currentScenario.numThreads, 5)
+                   const config = {
+                     windowWidth: Math.max(100, width),
+                     windowHeight: Math.max(100, height),
+                     scalePercent: Math.min(200, Math.max(10, scale)),
+                     numThreads: Math.max(1, threads),
+                     csvData: currentScenario.csvData,
+                     selectedScenario: selectedScript
+                   }
+                   onContinue?.(config)
+                 }}
+               >
+                 Continue
+               </Button>
+             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Custom Script Upload Modal */}
+      {showScriptUpload && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-[70vw] h-[90vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b flex-shrink-0">
+              <h3 className="text-xl font-semibold">Upload Custom Script</h3>
+              <button
                 onClick={() => {
-                  const toInt = (v: unknown, fallback: number) => {
-                    const s = String(v ?? '')
-                    const n = parseInt(s.replace(/\D+/g, ''), 10)
-                    return Number.isFinite(n) ? n : fallback
-                  }
-                  const width = toInt(currentScenario.windowWidth, 800)
-                  const height = toInt(currentScenario.windowHeight, 600)
-                  const scale = toInt(currentScenario.scalePercent, 100)
-                  const threads = toInt(currentScenario.numThreads, 5)
-                  const config = {
-                    windowWidth: Math.max(100, width),
-                    windowHeight: Math.max(100, height),
-                    scalePercent: Math.min(200, Math.max(10, scale)),
-                    numThreads: Math.max(1, threads),
-                    csvData: currentScenario.csvData
-                  }
-                  onContinue?.(config)
+                  setShowScriptUpload(false)
+                  setScriptContent('')
+                  setScriptFileName('')
+                }}
+                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6 flex-1 flex flex-col overflow-hidden">
+              <div className="space-y-6 flex-1 flex flex-col">
+                <div className="flex-shrink-0">
+                  <Label htmlFor="script-name">Script Name</Label>
+                  <Input
+                    id="script-name"
+                    value={scriptFileName}
+                    onChange={(e) => setScriptFileName(e.target.value)}
+                    placeholder="Enter script name (without extension)"
+                    className={!scriptFileName.trim() ? 'border-red-500' : ''}
+                  />
+                  {!scriptFileName.trim() && (
+                    <p className="text-sm text-red-500 mt-1">Script name is required</p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">
+                    Supported file types: TypeScript (.ts) and JavaScript (.js)
+                  </p>
+                </div>
+                
+                 <div className="space-y-2 flex-1 flex flex-col">
+                   <div className="flex items-center justify-between">
+                     <Label htmlFor="script-content">Automation Logic</Label>
+                     <Button
+                       type="button"
+                       variant="outline"
+                       size="sm"
+                       onClick={() => setScriptContent(getScriptTemplate())}
+                     >
+                       Use Template
+                     </Button>
+                   </div>
+                   <textarea
+                     id="script-content"
+                     value={scriptContent}
+                     onChange={(e) => setScriptContent(e.target.value)}
+                     placeholder="Paste your automation logic here or click 'Use Template'..."
+                     className={`w-full flex-1 p-4 border rounded-md font-mono text-sm resize-none ${
+                       !scriptValidation.isValid ? 'border-red-500' : ''
+                     }`}
+                   />
+                  <div className="flex-shrink-0">
+                    {!scriptValidation.isValid && (
+                      <div className="space-y-1">
+                        {scriptValidation.errors.map((error, index) => (
+                          <p key={index} className="text-sm text-red-500">• {error}</p>
+                        ))}
+                      </div>
+                    )}
+                    {scriptValidation.isValid && scriptContent && (
+                      <p className="text-sm text-green-600">✓ Script validation passed</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="flex justify-end gap-3 p-6 border-t bg-gray-50 flex-shrink-0">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowScriptUpload(false)
+                  setScriptContent('')
+                  setScriptFileName('')
                 }}
               >
-                Continue
+                Cancel
+              </Button>
+              <Button
+                onClick={handleUploadScript}
+                disabled={!scriptFileName.trim() || !scriptContent.trim()}
+              >
+                Save Script
               </Button>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
