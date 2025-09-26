@@ -17,6 +17,9 @@ import { openProfilesWithConcurrency, closeProfile, withPage } from './sessionMa
 process.env.WS_NO_BUFFER_UTIL = '1'
 process.env.WS_NO_UTF_8_VALIDATE = '1'
 
+// Enable Chromium/Electron logging to the console window (Windows debug builds)
+app?.commandLine?.appendSwitch?.('enable-logging')
+
 // The built directory structure
 //
 // ├─┬─┬ dist
@@ -273,6 +276,50 @@ ipcMain.handle('run-automation-for-profile', async (_event, payload: { profileId
     })
     console.log('[ipc] automation finished for', profileId)
     return { success: true }
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Unknown error' }
+  }
+})
+
+// Run automation concurrently for multiple profiles with a concurrency limit
+ipcMain.handle('run-automation-batch', async (_event, payload: { profileIds: string[]; scenario?: string; inputs?: Record<string, any> & { default?: any }; concurrency?: number }) => {
+  try {
+    const profileIds = Array.isArray(payload?.profileIds) ? payload.profileIds : []
+    const scenario = payload?.scenario
+    const inputs = payload?.inputs || {}
+    const concurrency = Math.max(1, Math.floor(Number(payload?.concurrency) || 1))
+
+    if (profileIds.length === 0) {
+      return { success: false, error: 'profileIds is required and must be a non-empty array' }
+    }
+
+    console.log('[ipc] run-automation-batch', { count: profileIds.length, concurrency, scenario })
+
+    const { runAutomationOnPage } = await import('./automation/ThreadsAutomationController.js')
+    const results: Array<{ profileId: string; success: boolean; error?: string }> = []
+    let cursor = 0
+    const workers = Array.from({ length: Math.min(concurrency, profileIds.length) }, async () => {
+      while (cursor < profileIds.length) {
+        const index = cursor++
+        const id = profileIds[index]
+        const input = (inputs && (id in inputs)) ? inputs[id] : (inputs?.default ?? {})
+        try {
+          await withPage(id, async (page) => {
+            const result = await runAutomationOnPage(page, { scenario, input })
+            if (!result?.success) throw new Error(result?.error || 'Scenario failed')
+          })
+          results.push({ profileId: id, success: true })
+          console.log('[ipc] automation finished for', id)
+        } catch (e: any) {
+          const message = e?.message || String(e)
+          console.error('[ipc] automation failed for', id, message)
+          results.push({ profileId: id, success: false, error: message })
+        }
+      }
+    })
+
+    await Promise.all(workers)
+    return { success: true, results }
   } catch (error: any) {
     return { success: false, error: error?.message || 'Unknown error' }
   }

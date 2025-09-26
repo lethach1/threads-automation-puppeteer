@@ -74,6 +74,7 @@ export const humanMouseMove = async (page, selector, options = {}) => {
  * @param {string} selector - CSS selector của element
  */
 export const humanClick = async (page, selector) => {
+  await waitForElements(page,selector)
   await page.click(selector);
   await humanDelay(2000, 4000);
 };
@@ -413,6 +414,7 @@ const humanTypeWithMistakes = async (page, selector, text, mistakeRate = 0.08) =
       await humanDelay(500, 1500);
     }
   }
+  
 };
 
 // Export tất cả functions đã được export ở trên
