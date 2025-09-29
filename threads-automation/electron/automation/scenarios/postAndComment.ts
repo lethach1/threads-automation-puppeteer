@@ -104,11 +104,60 @@ export async function run(page: Page, input: Input = {}) {
 
     // Click Add Subpost, then target the last textbox and type text
     const addAndTypeSubPost = async (page: Page, text: string) => {
-      // Click add subpost button
-      const addSubpostButton = await page.$('.x6s0dn4:nth-child(2) > .x1i10hfl > .x1lliihq');
+      // Click add subpost button (robust: search inside composer dialog, tolerant text match)
+      const findAddSubpostButton = async () => {
+        // Wait up to 5s for the button to appear inside an open dialog
+        await page.waitForFunction(() => {
+          const dialog = document.querySelector('div[role="dialog"]') as HTMLElement | null
+          if (!dialog) return false
+          const buttons = Array.from(dialog.querySelectorAll('div[role="button"]')) as HTMLElement[]
+          const isVisible = (el: HTMLElement) => {
+            const rect = el.getBoundingClientRect()
+            return !!(el.offsetParent || (rect.width > 0 && rect.height > 0))
+          }
+          return buttons.some((el) => {
+            const txt = (el.innerText || '').trim().toLowerCase()
+            const re = /(add\s+to\s+thread|thêm\s+vào\s+thread|thêm.+thread)/i
+            return isVisible(el) && (re.test(txt) || txt.includes('add to thread'))
+          })
+        }, { timeout: 5000 }).catch(() => {})
+
+        // Prefer the last visible match within the dialog (closest to composer footer)
+        const handle = await page.evaluateHandle(() => {
+          const dialog = document.querySelector('div[role="dialog"]') as HTMLElement | null
+          const root: ParentNode = dialog || document
+          const buttons = Array.from(root.querySelectorAll('div[role="button"]')) as HTMLElement[]
+          const isVisible = (el: HTMLElement) => {
+            const rect = el.getBoundingClientRect()
+            return !!(el.offsetParent || (rect.width > 0 && rect.height > 0))
+          }
+          const candidates = buttons.filter((el) => {
+            const txt = (el.innerText || '').trim().toLowerCase()
+            const re = /(add\s+to\s+thread|thêm\s+vào\s+thread|thêm.+thread)/i
+            return isVisible(el) && (re.test(txt) || txt.includes('add to thread'))
+          })
+          return candidates.length ? candidates[candidates.length - 1] : null
+        })
+        return handle.asElement() as any
+      }
+
+      const beforeEditors = await page.$$('div[role="textbox"]')
+      const addSubpostButton = await findAddSubpostButton()
       if (!addSubpostButton) throw new Error('Add subpost button not found')
-      await humanClick(page,addSubpostButton)
+
+      // Ensure in view, then click
+      await addSubpostButton.evaluate((el: any) => (el as HTMLElement).scrollIntoView({ block: 'center' }))
+      await humanDelay(150, 300)
+      await humanClick(page, addSubpostButton as any)
       console.log(`Clicked add subpost button`)
+
+      // Wait for a new editor to appear
+      await page.waitForFunction(
+        (prevCount) => document.querySelectorAll('div[role="textbox"]').length > (prevCount as number),
+        {},
+        beforeEditors.length
+      ).catch(() => {})
+
       // Brief wait for DOM to render the new editor
       await humanDelay(300, 700)
       const boxes = await page.$$('div[role="textbox"]')
@@ -347,17 +396,17 @@ export async function run(page: Page, input: Input = {}) {
                   await fileInput.uploadFile(filePath)
                   await humanDelay(1500, 2500)
                 } catch (err) {
-                  console.log('🟨 Upload single image failed:', (err as any)?.message || err)
+                  console.log('Upload single image failed:', (err as any)?.message || err)
                 }
               }
             }
           }
         } catch (e) {
-          console.log('🟨 Media upload skipped due to error:', (e as any)?.message || e)
+          console.log('Media upload skipped due to error:', (e as any)?.message || e)
         }
       }
 
-      // Step 3.5: Handle sub-posts (after media upload)
+      // Step 5: Handle sub-posts (after media upload)
       let subPostIndex = 1
       subPostIndex = await handleRemainingPostChunks(page, item.remainingPostChunks || [], subPostIndex)
       subPostIndex = await handleSubPostTexts(page, extractSubPostTexts(item as any), subPostIndex)
@@ -365,7 +414,7 @@ export async function run(page: Page, input: Input = {}) {
 
       // Step 5: Add Topic - tags (optional)
       if (item.tag) {
-        if (isFirst) console.log('📍 Step 7: Adding topic/tag...')
+        if (isFirst) console.log('Step 5: Adding topic/tag...')
         await humanClick(page,'input.xwhw2v2')
         await humanTypeWithMistakes(page, 'input.xwhw2v2', item.tag)
       }
@@ -401,9 +450,9 @@ export async function run(page: Page, input: Input = {}) {
 
           const parsed = parseSchedule((item as any).schedule)
           if (!parsed) {
-            console.log('🟨 Invalid schedule format, skipping schedule:', (item as any).schedule)
+            console.log('Invalid schedule format, skipping schedule:', (item as any).schedule)
           } else {
-            if (isFirst) console.log('📍 Step 7.5: Scheduling post...')
+            if (isFirst) console.log('Step 7.5: Scheduling post...')
             // Open expanded options
             await humanClick(page,'.xx6bhzk > .x1lliihq > .xbh8q5q')
             await humanDelay(400, 800)
@@ -437,49 +486,83 @@ export async function run(page: Page, input: Input = {}) {
               } catch { return false }
             }, dateText)
             if (!clicked) {
-              console.log('🟨 Could not find day element for:', dateText)
+              console.log('Could not find day element for:', dateText)
             } else {
               await humanDelay(300, 700)
             }
 
-            // Fill time hh:mm in 12h inputs (derive from 24h)
-            const hh12 = ((parsed.hour24 + 11) % 12) + 1
-            const mm = parsed.minute.toString().padStart(2, '0')
-            await humanClick(page,'input[placeholder="hh"]')
-            await humanTypeWithMistakes(page, 'input[placeholder="hh"]', String(hh12))
-            await humanDelay(200, 400)
-            await humanClick(page,'input[placeholder="mm"]')
-            await humanTypeWithMistakes(page, 'input[placeholder="mm"]', mm)
-            await humanDelay(200, 400)
+            // Debug: log parsed schedule components
+            console.log(`[schedule] parsed -> hour24=${parsed.hour24}, minute=${parsed.minute}, day=${parsed.day}, month=${parsed.month}, year=${parsed.year}`)
 
-            // Some UIs require AM/PM toggling; try to click meridiem if exists
-            try {
-              const meridiem = parsed.hour24 < 12 ? 'AM' : 'PM'
-              const meridiemSel = meridiem === 'AM' ? 'button:has-text("AM")' : 'button:has-text("PM")'
-              const merBtn = await page.$(meridiemSel)
-              if (merBtn) {
-                await merBtn.click()
-                await humanDelay(150, 300)
+            // Fill time hh:mm in 24h inputs directly
+            const hh24 = parsed.hour24.toString().padStart(2, '0')
+            const mm = parsed.minute.toString().padStart(2, '0')
+            console.log(`[schedule] computed -> hh24='${hh24}', mm='${mm}'`)
+
+
+            // Focus → caret at end → select all → type full chunk at once (no per-char delay)
+            const hhSelector = 'input[placeholder="hh"]'
+            const mmSelector = 'input[placeholder="mm"]'
+            await page.waitForSelector(hhSelector, { visible: true })
+            await page.waitForSelector(mmSelector, { visible: true })
+
+            // Hour
+            await humanDelay(120, 280)
+            await page.focus(hhSelector)
+            await humanDelay(120, 240)
+            await page.evaluate((sel) => {
+              const el = document.querySelector(sel) as HTMLInputElement | null
+              if (el) {
+                const len = el.value.length
+                el.setSelectionRange(len, len)
               }
-            } catch {}
+            }, hhSelector)
+            await humanDelay(100, 220)
+            await page.keyboard.down('Control')
+            await page.keyboard.press('KeyA')
+            await page.keyboard.up('Control')
+            await humanDelay(140, 260)
+            await page.keyboard.type(hh24, { delay: 0 })
+            await humanDelay(160, 320)
+
+            // Minute
+            await humanDelay(140, 300)
+            await page.focus(mmSelector)
+            await humanDelay(120, 240)
+            await page.evaluate((sel) => {
+              const el = document.querySelector(sel) as HTMLInputElement | null
+              if (el) {
+                const len = el.value.length
+                el.setSelectionRange(len, len)
+              }
+            }, mmSelector)
+            await humanDelay(100, 220)
+            await page.keyboard.down('Control')
+            await page.keyboard.press('KeyA')
+            await page.keyboard.up('Control')
+            await humanDelay(140, 260)
+            await page.keyboard.type(mm, { delay: 0 })
+            await humanDelay(160, 320)
 
             // Click Done
             await humanClick(page,'div[class="xmzvs34"] [role="button"]')
             await humanDelay(500, 900)
           }
         } catch (e) {
-          console.log('🟨 Schedule step skipped due to error:', (e as any)?.message || e)
+          console.log('Schedule step skipped due to error:', (e as any)?.message || e)
         }
       }
 
       // Step 8: Post
-      if (isFirst) console.log('📍 Step 8: Posting content...')
+      if (isFirst) console.log('Step 8: Posting content...')
       await humanClick(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
       await humanDelay(2000, 4000)
-      console.log('✅ Step 8 completed: Content posted successfully')
+      console.log('Step 8 completed: Content posted successfully')
 
-  
-
+      if ((item as any)?.schedule) {
+        console.log('Skipping comment step because of schedule')
+        continue;
+      }
       if (isFirst) {
         // Step 9-15: Profile navigation, comment
         await humanClick(page,'.x78zum5 > .x1i10hfl > .x90nhty > .xl1xv1r')
