@@ -71,22 +71,25 @@ export const humanMouseMove = async (page, selector, options = {}) => {
 /**
  * Mô phỏng click tự nhiên với ghost-cursor
  * @param {Object} page - Puppeteer page object
- * @param {string} selector - CSS selector của element
+ * @param {Object} elementHandle - ElementHandle của element cần click
  */
 export const humanClick = async (page, selectorOrElement) => {
+  let handle = selectorOrElement
   if (typeof selectorOrElement === 'string') {
-    await waitForElements(page, selectorOrElement)
-    await page.click(selectorOrElement);
-  } else {
-    // It's an ElementHandle
-    await selectorOrElement.click();
+    const selector = selectorOrElement
+    await page.waitForSelector(selector, { visible: true, timeout: 10000 })
+    handle = await page.$(selector)
   }
-  await humanDelay(2000, 4000);
-};
-
-export const waitForElements = async (page, selector) => {
-  await page.waitForSelector(selector, { timeout: 10000 })
-  await humanDelay(1000, 2000)
+  if (!handle) {
+    throw new Error('Element handle is required for humanClick')
+  }
+  try {
+    await handle.evaluate((el) => {
+      el.scrollIntoView({ block: 'center', inline: 'center' })
+    })
+  } catch {}
+  await handle.click()
+  await humanDelay(2000, 4000)
 };
 
 
@@ -379,54 +382,56 @@ const humanRandomMouseMovement = async (page, duration = 3000) => {
 
 
 /**
- * Mô phỏng type với mistakes và corrections (dùng CSS selector)
+ * Mô phỏng type với mistakes và corrections (dùng ElementHandle)
  * @param {Object} page - Puppeteer page object
- * @param {string} selector - CSS selector của input field
+ * @param {Object} elementHandle - ElementHandle của input/textarea cần type
  * @param {string} text - Text cần type
  * @param {number} mistakeRate - Tỷ lệ gõ sai (0-1)
  */
 const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate = 0.08) => {
-  const cursor = createGhostCursor(page);
-  
-  // Handle both ElementHandle and string selector
-  let element;
+  let elementHandle = selectorOrElement
   if (typeof selectorOrElement === 'string') {
-    element = await page.$(selectorOrElement);
-    if (!element) {
-      throw new Error(`Element not found for selector: ${selectorOrElement}`);
-    }
-    await cursor.click(selectorOrElement);
-  } else {
-    // It's an ElementHandle
-    element = selectorOrElement;
-    await element.click();
+    const selector = selectorOrElement
+    await page.waitForSelector(selector, { visible: true, timeout: 10000 })
+    elementHandle = await page.$(selector)
   }
-  await humanDelay(200, 500);
-  
+  if (!elementHandle) {
+    throw new Error('Element handle is required for humanTypeWithMistakes')
+  }
+
+  // Scroll element into view and focus it, then click via helper
+  try {
+    await elementHandle.evaluate((el) => {
+      el.scrollIntoView({ block: 'center', inline: 'center' })
+    })
+  } catch {}
+
+  await humanClick(page, elementHandle)
+  await humanDelay(200, 500)
+
   for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    
+    const char = text[i]
+
     // Thỉnh thoảng gõ sai
     if (Math.random() < mistakeRate) {
-      const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1);
-      await page.keyboard.type(wrongChar);
-      await humanDelay(100, 300);
-      
+      const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1)
+      await page.keyboard.type(wrongChar)
+      await humanDelay(100, 300)
+
       // Xóa ký tự sai
-      await page.keyboard.press('Backspace');
-      await humanDelay(200, 500);
+      await page.keyboard.press('Backspace')
+      await humanDelay(200, 500)
     }
-    
+
     // Gõ ký tự đúng
-    await page.keyboard.type(char, { delay: Math.floor(Math.random() * 100) + 30 });
-    await humanDelay(30, 120);
-    
+    await page.keyboard.type(char, { delay: Math.floor(Math.random() * 100) + 30 })
+    await humanDelay(30, 120)
+
     // Thỉnh thoảng dừng lâu hơn
     if (Math.random() < 0.1) {
-      await humanDelay(500, 1500);
+      await humanDelay(500, 1500)
     }
   }
-  
 };
 
 // Export tất cả functions đã được export ở trên
