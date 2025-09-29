@@ -1,0 +1,419 @@
+var _a, _b, _c, _d, _e, _f;
+import electron from 'electron';
+const { app, BrowserWindow, dialog, ipcMain } = electron;
+// import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import fs from 'fs';
+import { promisify } from 'util';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { openProfilesWithConcurrency, closeProfile, withPage } from './sessionManager';
+// Use require for external modules after env flags are set
+// const require = createRequire(import.meta.url)
+// Hint ws to skip optional native deps to avoid bundler resolution issues
+process.env.WS_NO_BUFFER_UTIL = '1';
+process.env.WS_NO_UTF_8_VALIDATE = '1';
+// Enable Chromium/Electron logging to the console window (Windows debug builds)
+(_b = (_a = app === null || app === void 0 ? void 0 : app.commandLine) === null || _a === void 0 ? void 0 : _a.appendSwitch) === null || _b === void 0 ? void 0 : _b.call(_a, 'enable-logging');
+// Enable debug mode if DEBUG environment variable is set
+if (process.env.DEBUG === 'true') {
+    (_d = (_c = app === null || app === void 0 ? void 0 : app.commandLine) === null || _c === void 0 ? void 0 : _c.appendSwitch) === null || _d === void 0 ? void 0 : _d.call(_c, 'remote-debugging-port', '9222');
+    (_f = (_e = app === null || app === void 0 ? void 0 : app.commandLine) === null || _e === void 0 ? void 0 : _e.appendSwitch) === null || _f === void 0 ? void 0 : _f.call(_e, 'enable-logging');
+    console.log('🐛 Debug mode enabled - DevTools available at http://localhost:9222');
+}
+// The built directory structure
+//
+// ├─┬─┬ dist
+// │ │ └── index.html
+// │ │
+// │ ├─┬ dist-electron
+// │ │ ├── main.js
+// │ │ └── preload.mjs
+// │
+process.env.APP_ROOT = path.join(__dirname, '..');
+// 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
+export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
+export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron');
+export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
+process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST;
+let win;
+function createWindow() {
+    win = new BrowserWindow({
+        width: 1200,
+        height: 900,
+        minWidth: 1000,
+        minHeight: 700,
+        icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.mjs'),
+        },
+    });
+    // Test active push message to Renderer-process.
+    win.webContents.on('did-finish-load', () => {
+        win === null || win === void 0 ? void 0 : win.webContents.send('main-process-message', (new Date).toLocaleString());
+    });
+    if (VITE_DEV_SERVER_URL) {
+        win.loadURL(VITE_DEV_SERVER_URL);
+    }
+    else {
+        // win.loadFile('dist/index.html')
+        win.loadFile(path.join(RENDERER_DIST, 'index.html'));
+    }
+}
+// Quit when all windows are closed, except on macOS. There, it's common
+// for applications and their menu bar to stay active until the user quits
+// explicitly with Cmd + Q.
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+        app.quit();
+        win = null;
+    }
+});
+app.on('activate', () => {
+    // On OS X it's common to re-create a window in the app when the
+    // dock icon is clicked and there are no other windows open.
+    if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+    }
+});
+app.whenReady().then(createWindow);
+// IPC: Open directory picker and return selected path
+ipcMain.handle('select-directory', async () => {
+    const result = await dialog.showOpenDialog({
+        title: 'Select a directory',
+        properties: ['openDirectory']
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+        return '';
+    }
+    return result.filePaths[0];
+});
+// IPC: Open file picker and return selected file path
+ipcMain.handle('select-file', async () => {
+    const result = await dialog.showOpenDialog({
+        title: 'Select a file',
+        properties: ['openFile'],
+        filters: [
+            { name: 'Data Files', extensions: ['csv', 'xlsx', 'xls', 'xlsm'] },
+            { name: 'CSV Files', extensions: ['csv'] },
+            { name: 'Excel Files', extensions: ['xlsx', 'xls', 'xlsm'] },
+            { name: 'TypeScript Files', extensions: ['ts'] },
+            { name: 'All Files', extensions: ['*'] }
+        ]
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+        return '';
+    }
+    return result.filePaths[0];
+});
+// Read file content API
+ipcMain.handle('read-file', async (_event, filePath) => {
+    try {
+        const content = await promisify(fs.readFile)(filePath, 'utf8');
+        return content;
+    }
+    catch (error) {
+        throw new Error(`Failed to read file: ${error === null || error === void 0 ? void 0 : error.message}`);
+    }
+});
+// Script file picker API (only TypeScript and JavaScript)
+ipcMain.handle('select-script-file', async () => {
+    const result = await dialog.showOpenDialog(win, {
+        title: 'Select a TypeScript or JavaScript file',
+        properties: ['openFile'],
+        filters: [
+            { name: 'Script Files', extensions: ['ts', 'js'] }
+        ],
+        buttonLabel: 'Select Script',
+        message: 'Please select a TypeScript (.ts) or JavaScript (.js) file'
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+        return '';
+    }
+    // Double-check file extension
+    const filePath = result.filePaths[0];
+    const fileExtension = filePath.toLowerCase().split('.').pop();
+    if (!['ts', 'js'].includes(fileExtension || '')) {
+        throw new Error('Only TypeScript (.ts) and JavaScript (.js) files are allowed');
+    }
+    return filePath;
+});
+// IPC: Parse CSV/Excel file and return data using SheetJS
+ipcMain.handle('parse-csv', async (_event, filePath) => {
+    try {
+        const fs = await import('fs');
+        const XLSX = await import('xlsx');
+        // Get file extension to determine file type
+        const fileExtension = filePath.toLowerCase().split('.').pop();
+        let workbook;
+        if (fileExtension === 'csv') {
+            // For CSV files, read as UTF-8 text
+            const fileContent = fs.readFileSync(filePath, 'utf-8');
+            workbook = XLSX.read(fileContent, { type: 'string' });
+        }
+        else if (['xlsx', 'xls', 'xlsm'].includes(fileExtension || '')) {
+            // For Excel files, read as buffer
+            const fileBuffer = fs.readFileSync(filePath);
+            workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+        }
+        else {
+            throw new Error(`Unsupported file format: ${fileExtension}`);
+        }
+        // Get the first worksheet
+        const sheetName = workbook.SheetNames[0];
+        if (!sheetName) {
+            return { headers: [], rows: [], totalRows: 0 };
+        }
+        const worksheet = workbook.Sheets[sheetName];
+        // Convert worksheet to JSON array
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            defval: '',
+            raw: false // Convert all values to strings
+        });
+        if (jsonData.length === 0) {
+            return { headers: [], rows: [], totalRows: 0 };
+        }
+        // First row is headers
+        const headers = jsonData[0].map((h) => String(h || '').trim());
+        // Remaining rows are data
+        const rows = jsonData.slice(1).map((row) => {
+            const rowData = {};
+            headers.forEach((header, index) => {
+                const value = row[index];
+                rowData[header] = String(value || '').trim();
+            });
+            return rowData;
+        });
+        return { headers, rows, totalRows: rows.length };
+    }
+    catch (error) {
+        console.error('❌ Failed to parse file:', error);
+        throw error;
+    }
+});
+// Session opening/management is handled in sessionManager.ts
+// IPC: Run open profiles with concurrency and connect via puppeteer
+ipcMain.handle('run-open-profiles', async (_event, payload) => {
+    try {
+        console.log('[ipc] run-open-profiles called with', payload);
+        const { profileIds, windowWidth, windowHeight, scalePercent, concurrency } = payload;
+        if (!Array.isArray(profileIds) || profileIds.length === 0) {
+            return {
+                success: false,
+                error: 'profileIds is required and must be a non-empty array'
+            };
+        }
+        const options = {
+            windowWidth: Number(windowWidth) || 800,
+            windowHeight: Number(windowHeight) || 600,
+            scalePercent: Number(scalePercent) || 100
+        };
+        const concurrencyLimit = Math.max(1, Math.floor(Number(concurrency) || 1));
+        const opened = await openProfilesWithConcurrency(profileIds, options, concurrencyLimit);
+        console.log('[ipc] run-open-profiles opened:', opened);
+        return { success: true, opened };
+    }
+    catch (error) {
+        console.error('Error in run-open-profiles:', error);
+        return {
+            success: false,
+            error: (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error'
+        };
+    }
+});
+// Optional: IPC to close a single profile session
+ipcMain.handle('close-profile', async (_event, profileId) => {
+    try {
+        const ok = await closeProfile(profileId);
+        if (!ok)
+            return { success: false, error: 'session not found' };
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error' };
+    }
+});
+// Run a simple automation step on an existing session (example stub)
+ipcMain.handle('run-automation-for-profile', async (_event, payload) => {
+    try {
+        const { profileId, scenario, input } = payload || {};
+        console.log('[ipc] run-automation-for-profile for', profileId);
+        if (!profileId)
+            return { success: false, error: 'profileId is required' };
+        const { runAutomationOnPage } = await import('./automation/ThreadsAutomationController.js');
+        console.log('[ipc] scenario:', scenario, 'input keys:', input ? Object.keys(input) : []);
+        await withPage(profileId, async (page) => {
+            const result = await runAutomationOnPage(page, { scenario, input });
+            if (!(result === null || result === void 0 ? void 0 : result.success))
+                throw new Error((result === null || result === void 0 ? void 0 : result.error) || 'Scenario failed');
+        });
+        console.log('[ipc] automation finished for', profileId);
+        return { success: true };
+    }
+    catch (error) {
+        return { success: false, error: (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error' };
+    }
+});
+// Run automation concurrently for multiple profiles with a concurrency limit
+ipcMain.handle('run-automation-batch', async (_event, payload) => {
+    try {
+        const profileIds = Array.isArray(payload === null || payload === void 0 ? void 0 : payload.profileIds) ? payload.profileIds : [];
+        const scenario = payload === null || payload === void 0 ? void 0 : payload.scenario;
+        const inputs = (payload === null || payload === void 0 ? void 0 : payload.inputs) || {};
+        const concurrency = Math.max(1, Math.floor(Number(payload === null || payload === void 0 ? void 0 : payload.concurrency) || 1));
+        if (profileIds.length === 0) {
+            return { success: false, error: 'profileIds is required and must be a non-empty array' };
+        }
+        console.log('[ipc] run-automation-batch', { count: profileIds.length, concurrency, scenario });
+        const { runAutomationOnPage } = await import('./automation/ThreadsAutomationController.js');
+        const results = [];
+        let cursor = 0;
+        const workers = Array.from({ length: Math.min(concurrency, profileIds.length) }, async () => {
+            var _a;
+            while (cursor < profileIds.length) {
+                const index = cursor++;
+                const id = profileIds[index];
+                const input = (inputs && (id in inputs)) ? inputs[id] : ((_a = inputs === null || inputs === void 0 ? void 0 : inputs.default) !== null && _a !== void 0 ? _a : {});
+                try {
+                    await withPage(id, async (page) => {
+                        const result = await runAutomationOnPage(page, { scenario, input });
+                        if (!(result === null || result === void 0 ? void 0 : result.success))
+                            throw new Error((result === null || result === void 0 ? void 0 : result.error) || 'Scenario failed');
+                    });
+                    results.push({ profileId: id, success: true });
+                    console.log('[ipc] automation finished for', id);
+                }
+                catch (e) {
+                    const message = (e === null || e === void 0 ? void 0 : e.message) || String(e);
+                    console.error('[ipc] automation failed for', id, message);
+                    results.push({ profileId: id, success: false, error: message });
+                }
+            }
+        });
+        await Promise.all(workers);
+        return { success: true, results };
+    }
+    catch (error) {
+        return { success: false, error: (error === null || error === void 0 ? void 0 : error.message) || 'Unknown error' };
+    }
+});
+// Custom Script Management APIs
+const CUSTOM_SCRIPTS_DIR = path.join(__dirname, 'custom-scripts');
+// Ensure custom scripts directory exists
+if (!fs.existsSync(CUSTOM_SCRIPTS_DIR)) {
+    fs.mkdirSync(CUSTOM_SCRIPTS_DIR, { recursive: true });
+    console.log(`[scripts] Created custom scripts directory: ${CUSTOM_SCRIPTS_DIR}`);
+}
+// Upload and save custom script
+ipcMain.handle('upload-custom-script', async (_event, { fileName, content }) => {
+    try {
+        // Ensure custom scripts directory exists before saving
+        if (!fs.existsSync(CUSTOM_SCRIPTS_DIR)) {
+            fs.mkdirSync(CUSTOM_SCRIPTS_DIR, { recursive: true });
+            console.log(`[scripts] Created custom scripts directory: ${CUSTOM_SCRIPTS_DIR}`);
+        }
+        // Validate script content
+        if (!content || typeof content !== 'string') {
+            return { success: false, error: 'Invalid script content' };
+        }
+        // Desktop app - minimal validation since user owns the machine
+        // Check if user provided automation logic
+        if (!content.trim()) {
+            return { success: false, error: 'Script content cannot be empty' };
+        }
+        // Create complete script by merging template with user logic
+        // Use dynamic import for ESM helper
+        const SCRIPT_TEMPLATE = `const fs = require('fs')
+const path = require('path')
+
+async function run(page, input = {}) {
+  try {
+    console.log('🚀 Starting custom automation...')
+    console.log('📝 Input:', input)
+    const { humanDelay, humanClick, humanTypeWithMistakes, waitForElements } = await import('../automation/human-behavior.js')
+    
+    // USER_LOGIC_PLACEHOLDER
+    
+    console.log('✅ Custom automation completed successfully!')
+    return { success: true }
+    
+  } catch (error) {
+    console.error('❌ Custom automation failed:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+module.exports = { run }`;
+        // Replace placeholder with user logic
+        const completeScript = SCRIPT_TEMPLATE.replace('// USER_LOGIC_PLACEHOLDER', content.trim());
+        // Save script (always save as .cjs file to avoid ES module issues)
+        // Ensure fileName is just the name, not a full path
+        const cleanFileName = path.basename(fileName).replace(/\.(ts|js)$/, '');
+        const scriptPath = path.join(CUSTOM_SCRIPTS_DIR, `${cleanFileName}.cjs`);
+        console.log(`[scripts] Saving script to: ${scriptPath}`);
+        console.log(`[scripts] Directory exists: ${fs.existsSync(CUSTOM_SCRIPTS_DIR)}`);
+        console.log(`[scripts] Original fileName: ${fileName}`);
+        console.log(`[scripts] Clean fileName: ${cleanFileName}`);
+        await promisify(fs.writeFile)(scriptPath, completeScript, 'utf8');
+        console.log(`[scripts] Script saved successfully: ${scriptPath}`);
+        // Validate script syntax by trying to compile
+        try {
+            // Basic TypeScript validation
+            const scriptName = cleanFileName.replace(/[^a-zA-Z0-9_-]/g, '_');
+            return {
+                success: true,
+                scriptName,
+                scriptPath,
+                message: 'Custom script uploaded successfully'
+            };
+        }
+        catch (validationError) {
+            // Remove invalid script
+            fs.unlinkSync(scriptPath);
+            return { success: false, error: `Script validation failed: ${validationError}` };
+        }
+    }
+    catch (error) {
+        console.error('[scripts] Error uploading script:', error);
+        console.error('[scripts] Error details:', {
+            message: error === null || error === void 0 ? void 0 : error.message,
+            code: error === null || error === void 0 ? void 0 : error.code,
+            path: error === null || error === void 0 ? void 0 : error.path,
+            stack: error === null || error === void 0 ? void 0 : error.stack
+        });
+        return { success: false, error: (error === null || error === void 0 ? void 0 : error.message) || 'Failed to upload script' };
+    }
+});
+// Get list of custom scripts
+ipcMain.handle('get-custom-scripts', async () => {
+    try {
+        const files = await promisify(fs.readdir)(CUSTOM_SCRIPTS_DIR);
+        const scripts = files
+            .filter(file => file.endsWith('.cjs')) // Only CommonJS files (template approach)
+            .map(file => ({
+            id: file.replace('.cjs', ''),
+            name: file.replace('.cjs', '').replace(/_/g, ' '),
+            fileName: file,
+            path: path.join(CUSTOM_SCRIPTS_DIR, file)
+        }));
+        return { success: true, scripts };
+    }
+    catch (error) {
+        return { success: false, error: (error === null || error === void 0 ? void 0 : error.message) || 'Failed to get custom scripts' };
+    }
+});
+// Delete custom script
+ipcMain.handle('delete-custom-script', async (_event, scriptId) => {
+    try {
+        const scriptPath = path.join(CUSTOM_SCRIPTS_DIR, `${scriptId}.cjs`);
+        if (fs.existsSync(scriptPath)) {
+            await promisify(fs.unlink)(scriptPath);
+            return { success: true, message: 'Script deleted successfully' };
+        }
+        return { success: false, error: 'Script not found' };
+    }
+    catch (error) {
+        return { success: false, error: (error === null || error === void 0 ? void 0 : error.message) || 'Failed to delete script' };
+    }
+});

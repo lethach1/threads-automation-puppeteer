@@ -73,9 +73,14 @@ export const humanMouseMove = async (page, selector, options = {}) => {
  * @param {Object} page - Puppeteer page object
  * @param {string} selector - CSS selector của element
  */
-export const humanClick = async (page, selector) => {
-  await waitForElements(page,selector)
-  await page.click(selector);
+export const humanClick = async (page, selectorOrElement) => {
+  if (typeof selectorOrElement === 'string') {
+    await waitForElements(page, selectorOrElement)
+    await page.click(selectorOrElement);
+  } else {
+    // It's an ElementHandle
+    await selectorOrElement.click();
+  }
   await humanDelay(2000, 4000);
 };
 
@@ -380,15 +385,22 @@ const humanRandomMouseMovement = async (page, duration = 3000) => {
  * @param {string} text - Text cần type
  * @param {number} mistakeRate - Tỷ lệ gõ sai (0-1)
  */
-const humanTypeWithMistakes = async (page, selector, text, mistakeRate = 0.08) => {
+const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate = 0.08) => {
   const cursor = createGhostCursor(page);
   
-  // Click vào element theo CSS selector
-  const element = await page.$(selector);
-  if (!element) {
-    throw new Error(`Element not found for selector: ${selector}`);
+  // Handle both ElementHandle and string selector
+  let element;
+  if (typeof selectorOrElement === 'string') {
+    element = await page.$(selectorOrElement);
+    if (!element) {
+      throw new Error(`Element not found for selector: ${selectorOrElement}`);
+    }
+    await cursor.click(selectorOrElement);
+  } else {
+    // It's an ElementHandle
+    element = selectorOrElement;
+    await element.click();
   }
-  await cursor.click(selector);
   await humanDelay(200, 500);
   
   for (let i = 0; i < text.length; i++) {

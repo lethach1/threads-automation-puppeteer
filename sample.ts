@@ -110,3 +110,12 @@ console.log('🎉 All automation steps completed successfully!')
 // - input.commentText: Comments to add (separated by |)
 // - input.mediaPath: Path to image file
 // - input.tag: Topic/tag to add
+
+
+const writingPost(page,text, index) => {
+  const elements = await page.$$('div[role="textbox"] > p > span');  
+  if (elements.length > index) {
+    const element = elements[index];
+    await humanClick(page,'div[role="textbox"]>p>span')
+    await humanTypeWithMistakes(page, 'div[role="textbox"]>p>span', text)
+}

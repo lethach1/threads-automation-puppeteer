@@ -1,11 +1,11 @@
 import type { Page } from 'puppeteer-core'
 import path from 'path'
-import { fileURLToPath } from 'node:url'
-import { app } from 'electron'
+// import { fileURLToPath } from 'node:url' // Unused import
+// import { app } from 'electron' // Unused import
 import fs from 'fs'
 import { createRequire } from 'module'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+// const __dirname = path.dirname(fileURLToPath(import.meta.url)) // Unused variable
 const require = createRequire(import.meta.url)
 
 // Extend global type
@@ -25,6 +25,7 @@ export type ScenarioResult = { success: boolean; data?: any; error?: string }
 const CUSTOM_SCRIPTS_DIR = path.join(process.cwd(), 'dist-electron', 'custom-scripts')
 
 // Template for custom scripts
+/*
 const SCRIPT_TEMPLATE = `const fs = require('fs')
 const path = require('path')
 
@@ -46,6 +47,7 @@ async function run(page, input = {}) {
 }
 
 module.exports = { run }`
+*/
 
 export const runAutomationOnPage = async (
   page: Page,

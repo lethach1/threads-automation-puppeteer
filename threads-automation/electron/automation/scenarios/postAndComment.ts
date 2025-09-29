@@ -14,7 +14,8 @@ type Input = {
   mediaPath?: string
   tag?: string
   schedule?: string
-  items?: Array<{ postText?: string; commentText?: string; mediaPath?: string; tag?: string; schedule?: string }>
+  subPost?: string
+  items?: Array<{ postText?: string; commentText?: string; mediaPath?: string; tag?: string; schedule?: string; subPost?: string; remainingPostChunks?: string[] }>
 }
 
 export async function run(page: Page, input: Input = {}) {
@@ -46,9 +47,10 @@ export async function run(page: Page, input: Input = {}) {
         const mediaPath = getByBase('image')
         const tag = getByBase('tag')
         const schedule = getByBase('schedule')
-        return { postText, commentText, mediaPath, tag, schedule }
+        const subPost = getByBase('subpost')
+        return { postText, commentText, mediaPath, tag, schedule, subPost }
       } catch {
-        return { postText: undefined, commentText: undefined, mediaPath: undefined, tag: undefined, schedule: undefined }
+        return { postText: undefined, commentText: undefined, mediaPath: undefined, tag: undefined, schedule: undefined, subPost: undefined }
       }
     }
 
@@ -61,6 +63,7 @@ export async function run(page: Page, input: Input = {}) {
     console.log('[input] postText:', normalizedInput.postText)
     console.log('[input] commentText:', normalizedInput.commentText)
     console.log('[input] mediaPath:', normalizedInput.mediaPath)
+    console.log('[input] subPost:', normalizedInput.subPost)
     if (normalizedInput.schedule) console.log('[input] schedule:', normalizedInput.schedule)
     console.log('[input] items count:', items.length)
     
@@ -99,9 +102,171 @@ export async function run(page: Page, input: Input = {}) {
       }
     }
 
+    const writingPost = async (page: Page, text: string, index: number) => {
+      try {
+        console.log(`🔍 Looking for textbox elements at index ${index}...`)
+        const elements = await page.$$('div[role="textbox"]');  
+        console.log(`🔍 Found ${elements.length} textbox elements`)
+        
+        if (elements.length > index) {
+          const element = elements[index];
+          console.log(`🔍 Using element at index ${index}`)
+          await humanClick(page, element)
+          await humanTypeWithMistakes(page, element, text)
+          console.log(`✅ Posted text at index ${index}: ${text.slice(0, 50)}...`)
+        } else {
+          throw new Error(`No textbox element found at index ${index}. Found ${elements.length} elements total.`)
+        }
+      } catch (error) {
+        console.log(`❌ Failed to write post at index ${index}:`, error)
+        throw error
+      }
+    }
+
+    // Build list of sub-posts from dynamic fields: subPost1..N, subPosts, subPost
+    const extractSubPostTexts = (raw: Record<string, any>): string[] => {
+      try {
+        const entries = Object.entries(raw || {})
+        // Collect keys matching subPost / subPost1..N (case-insensitive)
+        const numbered: Array<{ order: number; value: string }> = []
+
+        for (const [key, val] of entries) {
+          if (val == null) continue
+          const str = String(val).trim()
+          if (!str) continue
+          // Match keys like subPost, subPost1, subPosts, subPost 2 (case-insensitive, optional 's' and space)
+          const match = /^subposts?\s*(\d+)?$/i.exec(key)
+          if (match) {
+            const order = match[1] ? parseInt(match[1], 10) : 0
+            numbered.push({ order, value: str })
+          }
+        }
+
+        // Sort numbered sub-posts by order (subPost, subPost1, subPost2, ...)
+        numbered.sort((a, b) => a.order - b.order)
+        const fromNumbered = numbered.map((n) => n.value)
+
+        // Only use numbered sub-posts; if none present, return empty list
+        const fromNumberedTrimmed = fromNumbered
+          .map((s) => s.trim())
+          .filter(Boolean)
+
+        return fromNumberedTrimmed
+      } catch (e) {
+        console.log('extractSubPostTexts error:', (e as any)?.message || e)
+        return []
+      }
+    }
+
+    // Function to split text into chunks of max 500 characters (strict limit)
+    const splitTextIntoChunks = (text: string, maxLength: number = 500): string[] => {
+      if (!text || text.length <= maxLength) {
+        return text ? [text] : []
+      }
+
+      const chunks: string[] = []
+      let currentIndex = 0
+
+      while (currentIndex < text.length) {
+        let endIndex = currentIndex + maxLength
+        
+        // If we're not at the end of the text, try to break at a word boundary
+        if (endIndex < text.length) {
+          // Look for the last space, period, or newline within the chunk
+          const lastSpace = text.lastIndexOf(' ', endIndex)
+          const lastPeriod = text.lastIndexOf('.', endIndex)
+          const lastNewline = text.lastIndexOf('\n', endIndex)
+          
+          // Use the closest break point
+          const breakPoint = Math.max(lastSpace, lastPeriod, lastNewline)
+          
+          // If we found a good break point within reasonable distance, use it
+          if (breakPoint > currentIndex + maxLength * 0.7) {
+            endIndex = breakPoint
+          }
+        }
+        
+        // Ensure we don't exceed maxLength
+        endIndex = Math.min(endIndex, currentIndex + maxLength)
+        
+        const chunk = text.slice(currentIndex, endIndex).trim()
+        if (chunk) {
+          chunks.push(chunk)
+        }
+        currentIndex = endIndex
+      }
+
+      return chunks
+    }
+
+    // Extract and log subPost texts from all items
+    for (let i = 0; i < items.length; i++) {
+      const subPostTexts = extractSubPostTexts(items[i] as any)
+      if (subPostTexts.length > 0) {
+        console.log(`[input] item ${i + 1} subPost texts (${subPostTexts.length}):`, subPostTexts.map((text, idx) => `subPost${idx + 1}: ${text.slice(0, 50)}...`))
+        
+        // Log detailed subPost analysis
+        subPostTexts.forEach((text, idx) => {
+          const chunks = splitTextIntoChunks(text, 500)
+          console.log(`[analysis] subPost${idx + 1}: ${text.length} chars → ${chunks.length} posts`)
+        })
+      }
+    }
+
+    // Recursive function to create sub-posts with 500 character limit
+    const createSubPostsRecursively = async (text: string, postIndex: number = 1, maxDepth: number = 10): Promise<void> => {
+      if (!text || !text.trim() || maxDepth <= 0) {
+        return
+      }
+
+      const trimmedText = text.trim()
+      
+      // If text is within limit, post it directly
+      if (trimmedText.length <= 500) {
+        console.log(`📝 Creating sub-post ${postIndex}:`, trimmedText.slice(0, 80))
+        
+        try {
+          // Type the sub-post content
+          await writingPost(page, trimmedText, postIndex)
+          console.log(`✅ Sub-post ${postIndex} typed successfully`)
+          } catch (error) {
+          console.log(`🟨 Failed to post sub-post ${postIndex}:`, (error as any)?.message || error)
+        }
+        
+        return
+      }
+
+      // Text is too long, split it
+      const chunks = splitTextIntoChunks(trimmedText, 500)
+      console.log(`📝 Text too long (${trimmedText.length} chars), split into ${chunks.length} chunks`)
+      
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]
+        console.log(`📝 Creating sub-post ${postIndex} (chunk ${i + 1}/${chunks.length}):`, chunk.slice(0, 80))
+        
+        try {
+          // Type the sub-post content
+          await writingPost(page, chunk, postIndex)
+          
+          console.log(`Step 3.5b: Sub-post ${postIndex} (chunk ${i + 1}) finished writing`)
+          
+          // Human-like delay between sub-posts
+          if (i < chunks.length - 1) {
+            await humanDelay(2000, 4000)
+          }
+        } catch (error) {
+          console.log(`🟨 Failed to post sub-post ${postIndex} (chunk ${i + 1}):`, (error as any)?.message || error)
+        }
+        
+        // Increment post index for next chunk
+        postIndex++
+      }
+    }
+
     //start script
     // Step 1: Navigate to Threads
     console.log('Step 1: Start script')
+    debugger; // Breakpoint here - F5 để continue
     await page.goto('https://threads.com/', { waitUntil: 'networkidle2' })
     await humanDelay(2000, 4000)
 
@@ -114,13 +279,119 @@ export async function run(page: Page, input: Input = {}) {
       console.log(` ${isFirst ? 'Step 2' : 'Extra'}: Opening post composer...`)
       await humanClick(page,'.x1i10hfl > .xc26acl')
 
-      // Step 3: Type post
+      // Step 3: Type post (with auto-splitting if >500 chars)
       if (item.postText) {
         if (isFirst) console.log(' Step 3: Writing post text...')
-        await humanClick(page,'.xzsf02u > .xdj266r')
-        console.log('⌨️ Typing post text:', item.postText)
-        await humanTypeWithMistakes(page, '.xzsf02u > .xdj266r', item.postText)
+        
+        const postText = item.postText.trim()
+        console.log(`📝 Post content length: ${postText.length} characters`)
+        
+        // Check if post text exceeds 500 characters
+        if (postText.length > 500) {
+          console.log('📝 Post text too long, will split into multiple posts')
+          const postChunks = splitTextIntoChunks(postText, 500)
+          console.log(`📝 Post split into ${postChunks.length} chunks`)
+          
+          // Type and post the first chunk as main post
+          const firstChunk = postChunks[0]
+          console.log('⌨️ Typing main post (chunk 1):', firstChunk.slice(0, 80))
+          await writingPost(page, firstChunk, 0) // Main post uses index 0
+          
+          // Store remaining chunks for sub-posts
+          item.remainingPostChunks = postChunks.slice(1)
+        } else {
+          // Normal post (≤500 chars)
+          console.log('⌨️ Typing post text:', postText.slice(0, 80))
+          await writingPost(page, postText, 0) // Main post uses index 0
+        }
       }
+
+      // Step 3.5a: Handle sub-posts for all items (from postText chunks + subPost)
+      let subPostIndex = 1      
+       // Handle remaining chunks from split postText
+       if (item.remainingPostChunks && item.remainingPostChunks.length > 0) {
+         console.log(`Step 3.5a: Creating sub-posts from split postText (${item.remainingPostChunks.length} chunks)...`)
+         
+        for (let k = 0; k < item.remainingPostChunks.length; k++) {
+          const chunk = item.remainingPostChunks[k]
+          console.log(`📝 Creating sub-post ${subPostIndex} (from postText chunk ${k + 2}):`, chunk.slice(0, 80))
+          
+          try {
+            // Use writingPost with auto-incrementing index
+            await writingPost(page, chunk, subPostIndex)
+            
+            console.log(`Step 3.5a: Sub-post ${subPostIndex} finished writing`)
+            
+            // Human-like delay between sub-posts
+            if (k < item.remainingPostChunks.length - 1) {
+              await humanDelay(2000, 4000)
+            }
+          } catch (error) {
+            console.log(`🟨 Failed to post sub-post ${subPostIndex}:`, (error as any)?.message || error)
+          }
+          
+          subPostIndex++
+        }
+       }
+       
+        // Handle additional subPost content (from extractSubPostTexts)
+        const subPostTexts = extractSubPostTexts(item as any)
+        if (subPostTexts.length > 0) {
+          console.log(`Step 3.5b: Creating sub-posts from extracted subPost fields (${subPostTexts.length} items)...`)
+          
+          for (let m = 0; m < subPostTexts.length; m++) {
+            const subPostText = subPostTexts[m]
+            console.log(`Step 3.5b: Processing subPost ${m + 1}/${subPostTexts.length} (${subPostText.length} chars):`, subPostText.slice(0, 80))
+            
+            // Check if subPost text exceeds 500 characters
+            if (subPostText.length > 500) {
+              console.log(`Step 3.5b: SubPost ${m + 1} too long (${subPostText.length} chars), will split into multiple posts`)
+              const subPostChunks = splitTextIntoChunks(subPostText, 500)
+              console.log(`Step 3.5b: SubPost ${m + 1} split into ${subPostChunks.length} chunks`)
+              
+              // Create sub-posts for each chunk
+              for (let chunkIndex = 0; chunkIndex < subPostChunks.length; chunkIndex++) {
+                const chunk = subPostChunks[chunkIndex]
+                console.log(`Step 3.5b: Creating sub-post ${subPostIndex} (subPost ${m + 1}, chunk ${chunkIndex + 1}/${subPostChunks.length}):`, chunk.slice(0, 80))
+                
+                try {
+                  // Use writingPost with auto-incrementing index
+                  await writingPost(page, chunk, subPostIndex)
+                  console.log(`Step 3.5b: Sub-post ${subPostIndex} finished writing`)
+                  
+                  // Human-like delay between chunks
+                  if (chunkIndex < subPostChunks.length - 1) {
+                    await humanDelay(2000, 4000)
+                  }
+                } catch (error) {
+                  console.log(`🟨 Failed to post sub-post ${subPostIndex}:`, (error as any)?.message || error)
+                }
+                
+                subPostIndex++
+              }
+            } else {
+              // SubPost is within limit, post directly
+              console.log(`📝 Creating sub-post ${subPostIndex} (subPost ${m + 1}):`, subPostText.slice(0, 80))
+              
+              try {
+                // Use writingPost with auto-incrementing index
+                await writingPost(page, subPostText, subPostIndex)          
+                console.log(`✅ Sub-post ${subPostIndex} finished writing`)
+              } catch (error) {
+                console.log(`🟨 Failed to post sub-post ${subPostIndex}:`, (error as any)?.message || error)
+              }
+              subPostIndex++
+            }
+            
+            // Human-like delay between different subPost fields
+            if (m < subPostTexts.length - 1) {
+              await humanDelay(2000, 4000)
+            }
+          }
+        }
+
+      // Summary of sub-posts created
+      console.log(`✅ Step 8.5 completed for item ${i + 1}: Created ${subPostIndex - 1} sub-posts total`)
 
       // Step 4: Upload media (file or all images in a folder). Skip gracefully if invalid. (optional)
       const mediaPathStr = (item.mediaPath || '').trim()
@@ -164,7 +435,8 @@ export async function run(page: Page, input: Input = {}) {
             if (!fileInput) {
               console.log('🟨 File input not found; skipping all images')
             } else {
-              for (const [idx, filePath] of imagePaths.entries()) {
+              for (let idx = 0; idx < imagePaths.length; idx++) {
+                const filePath = imagePaths[idx]
                 try {
                   console.log(`📷 Uploading image ${idx + 1}/${imagePaths.length}:`, filePath)
                   await fileInput.uploadFile(filePath)
@@ -293,11 +565,12 @@ export async function run(page: Page, input: Input = {}) {
       if (isFirst) console.log('📍 Step 8: Posting content...')
       await humanClick(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
       await humanDelay(2000, 4000)
+      console.log('✅ Step 8 completed: Content posted successfully')
+
+  
 
       if (isFirst) {
-        console.log('✅ Step 8 completed: Content posted successfully')
-
-        // Step 9-15: Profile navigation, comment, pin (only for first item)
+        // Step 9-15: Profile navigation, comment
         await humanClick(page,'.x78zum5 > .x1i10hfl > .x90nhty > .xl1xv1r')
         await humanDelay(1000, 2000)
 

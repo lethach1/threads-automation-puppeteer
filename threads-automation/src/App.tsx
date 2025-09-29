@@ -38,7 +38,7 @@ function App() {
     <div className="min-h-screen bg-background">
       <AutomationConfig 
         onContinue={(config) => {
-          setSettings(config)
+          setSettings(config as any)
           setView('profiles')
         }} 
       />

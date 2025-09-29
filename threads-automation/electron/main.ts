@@ -20,6 +20,13 @@ process.env.WS_NO_UTF_8_VALIDATE = '1'
 // Enable Chromium/Electron logging to the console window (Windows debug builds)
 app?.commandLine?.appendSwitch?.('enable-logging')
 
+// Enable debug mode if DEBUG environment variable is set
+if (process.env.DEBUG === 'true') {
+  app?.commandLine?.appendSwitch?.('remote-debugging-port', '9222')
+  app?.commandLine?.appendSwitch?.('enable-logging')
+  console.log('🐛 Debug mode enabled - DevTools available at http://localhost:9222')
+}
+
 // The built directory structure
 //
 // ├─┬─┬ dist

@@ -21,6 +21,7 @@ const browserProfiles = [
 // Example 3: Mapping process (tự động trong ProfileTable.tsx)
 const mappingProcess = () => {
   // 1. Group Excel data by profile name
+  /*
   const groups = {
     "Profile A": [
       { profile: "Profile A", content: "Hello world", hashtags: "#threads #automation", media: "/path/image1.jpg", schedule: "2024-01-01 10:00" },
@@ -30,12 +31,15 @@ const mappingProcess = () => {
       { profile: "Profile B", content: "Different content", hashtags: "#marketing", media: "/path/image3.jpg", schedule: "2024-01-01 12:00" }
     ]
   }
+  */
 
   // 2. Map profile names to browser profile IDs
+  /*
   const nameToId = {
     "Profile A": "profile-123",
     "Profile B": "profile-456"
   }
+  */
 
   // 3. Create dynamic data structure (không hard-code columns)
   const inputByProfileId = new Map([
