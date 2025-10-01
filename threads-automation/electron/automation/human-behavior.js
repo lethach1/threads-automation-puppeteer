@@ -89,7 +89,7 @@ export const humanClick = async (page, selectorOrElement) => {
     })
   } catch {}
   await handle.click()
-  await humanDelay(2000, 4000)
+  await humanDelay(1000, 2000)
 };
 
 
@@ -407,7 +407,7 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
   } catch {}
 
   await humanClick(page, elementHandle)
-  await humanDelay(200, 500)
+  await humanDelay(100, 200)
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i]
@@ -420,7 +420,7 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
 
       // Xóa ký tự sai
       await page.keyboard.press('Backspace')
-      await humanDelay(200, 500)
+      await humanDelay(100, 200)
     }
 
     // Gõ ký tự đúng
@@ -429,7 +429,7 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
 
     // Thỉnh thoảng dừng lâu hơn
     if (Math.random() < 0.1) {
-      await humanDelay(500, 1500)
+      await humanDelay(300, 800)
     }
   }
 };

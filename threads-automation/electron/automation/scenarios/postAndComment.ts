@@ -605,6 +605,9 @@ export async function run(page: Page, input: Input = {}) {
     
 
     console.log('🎉 All automation steps completed successfully!')
+    await page.close()
+    const browser = page.browser()
+    await browser.close()
     return { success: true }
 
   } catch (error) {
