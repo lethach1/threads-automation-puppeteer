@@ -180,7 +180,7 @@ export default function AutomationConfig({ onContinue }: Props) {
   const availableScripts = [
     { id: 'postAndComment', name: 'Posts and Comments', description: 'Automate posting and commenting on threads' },
     { id: 'login', name: 'Login Automation', description: 'Automate user login process' },
-    { id: 'interactive', name: 'Interactive Automation', description: 'Interactive automation with user input' },
+    { id: 'spamComments', name: 'Spam Comments', description: 'Spam comments automation with user input' },
     ...customScripts.map(script => ({
       id: script.id,
       name: script.name,

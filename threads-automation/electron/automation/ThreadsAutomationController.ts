@@ -92,12 +92,20 @@ export const runAutomationOnPage = async (
         // Fallback to built-in scenarios
         const tsModules = import.meta.glob('./scenarios/*.ts', { eager: true }) as Record<string, any>
         const jsModules = import.meta.glob('./scenarios/*.js', { eager: true }) as Record<string, any>
-        const tsKey = `./scenarios/${scenario}.ts`
-        const jsKey = `./scenarios/${scenario}.js`
+        
+        // Map scenario IDs to actual file names
+        const scenarioMap: Record<string, string> = {
+          'spamComments': 'spamComments',
+          'postAndComment': 'postAndComment'
+        }
+        
+        const mappedScenario = scenarioMap[scenario] || scenario
+        const tsKey = `./scenarios/${mappedScenario}.ts`
+        const jsKey = `./scenarios/${mappedScenario}.js`
         const mod = tsModules[tsKey] || jsModules[jsKey]
-        if (!mod) throw new Error(`Scenario module not found: ${scenario}`)
+        if (!mod) throw new Error(`Scenario module not found: ${scenario} (mapped to: ${mappedScenario})`)
         if (!mod.run) throw new Error(`Scenario '${scenario}' has no exported 'run'`)
-        console.log('[router] built-in scenario module loaded')
+        console.log('[router] built-in scenario module loaded:', mappedScenario)
         const result: ScenarioResult = await mod.run(page, opts?.input)
         return result ?? { success: true }
       }
