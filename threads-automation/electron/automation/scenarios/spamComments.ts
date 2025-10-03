@@ -1,12 +1,14 @@
-import type { Page, ElementHandle } from 'puppeteer-core'
-import { existsSync, statSync, readdirSync } from 'fs'
-import { join as pathJoin } from 'path'
+import type { Page } from 'puppeteer-core'
 // @ts-ignore
 import { 
   humanDelay, 
   humanTypeWithMistakes,
-  humanClick
+  humanClick,
 } from '../human-behavior.js'
+// @ts-ignore
+import * as HB from '../human-behavior.js'
+// @ts-ignore
+import { humanScroll } from '../human-behavior.js'
 
 type Input = {
   profile?: string
@@ -137,134 +139,125 @@ export async function run(page: Page, input: Input = {}) {
       throw error
     }
 
-    // Step 4: Infinite scroll and comment on posts
-    console.log('Step 4: Start infinite scroll and commenting')
-    let totalPostsProcessed = 0
-    const maxPosts = normalizedInput.feedsComment || 10
-    const commentPool: string[] = (normalizedInput.commentPool && normalizedInput.commentPool.length > 0)
-      ? normalizedInput.commentPool
-      : ['Nice post!', 'Great content!', 'Love this!']
+    // Step 4: Scroll feed per post and click Reply button within each post
+    console.log('Step 4: Scroll per post and click reply')
+    try {
+      const POST_SELECTOR = 'div[data-pressable-container="true"]'
+      const REPLY_SVG_SELECTOR = 'div[role="button"] svg[aria-label="Trả lời"]'
 
-    while (totalPostsProcessed < maxPosts) {
-      console.log(`Processing batch ${Math.floor(totalPostsProcessed / 10) + 1}...`)
-      
-      // Get current posts
-      const posts = await page.$$('div[data-pressable-container="true"]')
-      console.log(`Found ${posts.length} posts in current view`)
-      
-      // Process each post in current batch
-      for (let i = 0; i < posts.length && totalPostsProcessed < maxPosts; i++) {
-        try {
-          console.log(`Processing post ${totalPostsProcessed + 1}/${maxPosts}`)
-          
-          // Step 5: Click reply button - get ElementHandle and use humanClick
-          const btnHandle = await posts[i].evaluateHandle((post) => {
-            const svg = post.querySelector(
-              'div[role="button"] svg[aria-label="Reply"], div[role="button"] svg[aria-label="Trả lời"], div[role="button"] svg[title="Reply"], div[role="button"] svg[title="Trả lời"]'
-            ) as SVGElement | null
-            return svg ? svg.closest('div[role="button"]') : null
-          })
-          const replyBtn = btnHandle && btnHandle.asElement ? btnHandle.asElement() : null
-          const clicked = !!replyBtn
-          if (replyBtn) {
-            await humanClick(page, replyBtn)
-          }
+      const maxPostsToVisit = typeof normalizedInput.feedsComment === 'number' && !Number.isNaN(normalizedInput.feedsComment)
+        ? Math.max(1, Math.min(60, normalizedInput.feedsComment))
+        : 12
+      const timeoutMs = 120_000
+      const MAX_EMPTY_LOADS = 8
 
-          if (clicked) {
-            await humanDelay(600, 1000)
+      let currentIndex = 0
+      let visited = 0
+      let emptyLoads = 0
+      const startTime = Date.now()
 
-            // Step 6: Type random comment
-            const commentText = commentPool[Math.floor(Math.random() * commentPool.length)]
-            console.log(`Commenting: "${commentText}"`)
+      while (visited < maxPostsToVisit && (Date.now() - startTime < timeoutMs)) {
+        let posts = await page.$$(POST_SELECTOR)
+        console.log(`[feed] Queried posts: count=${posts.length}, currentIndex=${currentIndex}, visited=${visited}`)
 
-            // Prefer dialog as composer; otherwise the current post region
-            const composerRoot = (await page.$('div[role="dialog"]')) || posts[i]
+        if (currentIndex >= posts.length) {
+          const distance = Math.floor(Math.random() * (1200 - 600 + 1)) + 600
+          console.log(`[feed] Need more posts. Scrolling distance=${distance}`)
+          await humanScroll(page as any, distance, 'down')
+          await humanDelay(500, 1200)
 
-            // Wait for a visible contenteditable textbox to appear inside composer
-            await page.waitForFunction((root: HTMLElement) => {
-              const isVisible = (el: Element) => {
-                const rect = (el as HTMLElement).getBoundingClientRect()
-                const style = window.getComputedStyle(el as HTMLElement)
-                return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
-              }
-              const candidates: Element[] = Array.from(
-                root.querySelectorAll('[contenteditable="true"][role="textbox"], [contenteditable="true"], div[role="textbox"], div[aria-multiline="true"]')
-              )
-              return candidates.some(isVisible)
-            }, { timeout: 8000 }, await composerRoot.evaluateHandle(el => el as HTMLElement))
-
-            // Get the input handle (first visible)
-            const commentInput = await (async () => {
-              const h = await composerRoot.evaluateHandle((root: HTMLElement) => {
-                const isVisible = (el: Element) => {
-                  const rect = (el as HTMLElement).getBoundingClientRect()
-                  const style = window.getComputedStyle(el as HTMLElement)
-                  return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
-                }
-                const selectors = '[contenteditable="true"][role="textbox"], [contenteditable="true"], div[role="textbox"], div[aria-multiline="true"]'
-                const nodes = Array.from(root.querySelectorAll(selectors))
-                return (nodes.find(isVisible) as HTMLElement | null) || null
-              })
-              // @ts-ignore
-              return h.asElement ? h.asElement() : null
-            })()
-
-            if (!commentInput) throw new Error('Composer input not found')
-
-            await humanClick(page, commentInput)
-            await humanTypeWithMistakes(page, commentInput, commentText)
-            await humanDelay(300, 600)
-
-            // Try to click Post/Đăng button inside the same composer
-            const postButton = await (async () => {
-              const buttons = await composerRoot.$$('div[role="button"]')
-              for (const b of buttons) {
-                const t = (await b.evaluate((el: HTMLElement) => (el.innerText || '').trim().toLowerCase()))
-                if (t === 'post' || t === 'đăng' || t === 'reply' || t === 'trả lời') return b
-              }
-              return null
-            })()
-
-            if (postButton) {
-              await humanClick(page, postButton)
+          posts = await page.$$(POST_SELECTOR)
+          console.log(`[feed] Re-queried posts after scroll: count=${posts.length}, currentIndex=${currentIndex}`)
+          if (currentIndex >= posts.length) {
+            emptyLoads += 1
+            if (emptyLoads >= MAX_EMPTY_LOADS) {
+              console.log('No more posts loaded. Stopping.')
+              break
             } else {
-              // Fallback: press Enter to submit
-              await page.keyboard.press('Enter')
+              console.log(`[feed] Empty load #${emptyLoads}. Will try again.`)
+              continue
             }
-
-            await humanDelay(800, 1300)
-            console.log(`✅ Commented on post ${totalPostsProcessed + 1}`)
+          } else {
+            emptyLoads = 0
           }
-          
-          totalPostsProcessed++
-          
-          // Random delay between posts
-          await humanDelay(2000, 4000)
-          
-        } catch (error) {
-          console.error(`Failed to comment on post ${totalPostsProcessed + 1}:`, error)
-          // Continue with next post
-          totalPostsProcessed++
         }
+
+        let post = posts[currentIndex]
+        console.log(`[feed] Processing post index=${currentIndex} of ${posts.length}`)
+        try {
+          await post.evaluate((el) => {
+            el.scrollIntoView({ block: 'center', inline: 'center' })
+          })
+        } catch {
+          // Re-query once if detached
+          posts = await page.$$(POST_SELECTOR)
+          console.log(`[feed] Post handle detached. Re-queried posts: count=${posts.length}`)
+          if (currentIndex < posts.length) {
+            post = posts[currentIndex]
+            try {
+              await post.evaluate((el) => {
+                el.scrollIntoView({ block: 'center', inline: 'center' })
+              })
+            } catch {}
+          } else {
+            console.log('[feed] currentIndex now out of range after re-query. Continuing...')
+            continue
+          }
+        }
+
+        await humanDelay(400, 900)
+
+        // Find reply button inside this post
+        let clicked = false
+        try {
+          const svg = await post.$(REPLY_SVG_SELECTOR)
+          if (svg) {
+            console.log(`[feed] Found reply SVG in post index=${currentIndex}. Resolving button...`)
+            // @ts-ignore
+            const replyBtnHandle = await svg.evaluateHandle((el: any) => el.closest('div[role="button"]'))
+            if (replyBtnHandle) {
+              console.log(`[feed] Clicking reply button for post index=${currentIndex}`)
+              await humanClick(page as any, replyBtnHandle as any)
+              clicked = true
+            }
+          }
+        } catch {}
+
+        if (!clicked) {
+          try {
+            // Fallback: full evaluate within the post scope
+            // @ts-ignore
+            const replyBtnHandle = await post.evaluateHandle((root: any) => {
+              const svg = root.querySelector('div[role="button"] svg[aria-label="Trả lời"]')
+              return svg ? svg.closest('div[role="button"]') : null
+            })
+            if (replyBtnHandle) {
+              console.log(`[feed] Fallback found reply button in post index=${currentIndex}. Clicking...`)
+              await humanClick(page as any, replyBtnHandle as any)
+              clicked = true
+            }
+          } catch {}
+        }
+
+        console.log(`[feed] Post index=${currentIndex} clickResult=${clicked ? 'clicked' : 'not-found'}`)
+        if (clicked) await humanDelay(600, 1500)
+
+        visited += 1
+        currentIndex += 1
+
+        // Light scroll to encourage lazy-loading next items
+        const nudge = Math.floor(Math.random() * (500 - 200 + 1)) + 200
+        console.log(`[feed] Nudge scroll distance=${nudge}`)
+        await humanScroll(page as any, nudge, 'down')
+        await humanDelay(300, 900)
       }
-      
-      // Scroll to load more posts
-      if (totalPostsProcessed < maxPosts) {
-        console.log('Scrolling to load more posts...')
-        await page.evaluate(() => {
-          window.scrollTo(0, document.body.scrollHeight)
-        })
-        await humanDelay(3000, 5000)
-        
-        // Wait for new posts to load
-        await page.waitForFunction(() => {
-          const posts = document.querySelectorAll('div[data-pressable-container="true"]')
-          return posts.length > 0
-        }, { timeout: 10000 })
-      }
+
+      console.log(`✅ Processed ${visited} post(s)`)      
+    } catch (error) {
+      console.error('Failed while per-post scrolling/clicking:', error)
+      throw error
     }
 
-    console.log(`🎉 Completed commenting on ${totalPostsProcessed} posts!`)
     // await page.close()
     // const browser = page.browser()
     // await browser.close()

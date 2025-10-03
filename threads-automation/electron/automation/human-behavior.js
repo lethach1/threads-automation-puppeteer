@@ -123,6 +123,145 @@ export const humanScroll = async (page, distance = 500, direction = 'down') => {
 };
 
 /**
+ * Lướt newsfeed tự nhiên (auto scroll) với hành vi giống người thật
+ * - Scroll theo quãng ngẫu nhiên, có tạm dừng và thi thoảng kéo ngược lại
+ * - Có thể dừng theo điều kiện selector hoặc hết thời gian
+ * @param {Object} page - Puppeteer page object
+ * @param {Object} options - Tùy chọn hành vi
+ * @param {number} options.maxScrolls - Số lần scroll tối đa
+ * @param {number} options.minDistance - Quãng scroll tối thiểu mỗi lượt (px)
+ * @param {number} options.maxDistance - Quãng scroll tối đa mỗi lượt (px)
+ * @param {number} options.pauseChance - Xác suất tạm dừng lâu giữa các lượt (0-1)
+ * @param {number} options.minPauseMs - Thời gian tạm dừng tối thiểu (ms)
+ * @param {number} options.maxPauseMs - Thời gian tạm dừng tối đa (ms)
+ * @param {number} options.occasionalUpChance - Xác suất kéo ngược lên nhẹ (0-1)
+ * @param {string} options.stopOnSelector - Selector để dừng khi thấy (tùy chọn)
+ * @param {number} options.timeoutMs - Tổng thời gian tối đa cho toàn bộ quá trình (tùy chọn)
+ */
+const humanAutoScrollFeed = async (page, options = {}) => {
+  const {
+    maxScrolls = 30,
+    minDistance = 600,
+    maxDistance = 1600,
+    pauseChance = 0.25,
+    minPauseMs = 1200,
+    maxPauseMs = 4000,
+    occasionalUpChance = 0.1,
+    stopOnSelector,
+    timeoutMs
+  } = options;
+
+  const startTime = Date.now();
+
+  for (let i = 0; i < maxScrolls; i++) {
+    if (timeoutMs && Date.now() - startTime > timeoutMs) break;
+
+    if (stopOnSelector) {
+      const found = await page.$(stopOnSelector);
+      if (found) break;
+    }
+
+    const distance = Math.floor(Math.random() * (maxDistance - minDistance + 1)) + minDistance;
+    await humanScroll(page, distance, 'down');
+
+    // Thi thoảng kéo ngược lại một đoạn ngắn (như xem lại nội dung phía trên)
+    if (Math.random() < occasionalUpChance) {
+      const upDistance = Math.floor(distance * (0.2 + Math.random() * 0.3));
+      await humanScroll(page, upDistance, 'up');
+    }
+
+    // Tạm dừng tự nhiên giữa các lần kéo
+    if (Math.random() < pauseChance) {
+      await humanDelay(minPauseMs, maxPauseMs);
+    } else {
+      await humanDelay(200, 800);
+    }
+  }
+};
+
+/**
+ * Lướt newsfeed cho đến khi thấy element mong muốn rồi click
+ * - Tự động kéo xuống theo quãng ngẫu nhiên và tạm dừng tự nhiên
+ * - Khi thấy selector: scroll vào giữa viewport rồi click (hoặc click child selector)
+ * @param {Object} page - Puppeteer page object
+ * @param {string} targetSelector - Selector của phần tử cần tìm
+ * @param {Object} options - Tùy chọn hành vi
+ * @param {number} options.maxScrolls - Số lần scroll tối đa trước khi bỏ cuộc
+ * @param {number} options.minDistance - Quãng scroll tối thiểu mỗi lượt (px)
+ * @param {number} options.maxDistance - Quãng scroll tối đa mỗi lượt (px)
+ * @param {number} options.pauseChance - Xác suất tạm dừng lâu giữa các lượt (0-1)
+ * @param {number} options.minPauseMs - Thời gian tạm dừng tối thiểu (ms)
+ * @param {number} options.maxPauseMs - Thời gian tạm dừng tối đa (ms)
+ * @param {number} options.occasionalUpChance - Xác suất kéo ngược lên nhẹ (0-1)
+ * @param {string} options.clickSelectorWithin - Selector con để click bên trong phần tử tìm thấy (VD: nút comment)
+ * @param {number} options.timeoutMs - Tổng thời gian tối đa cho toàn bộ quá trình
+ * @returns {Promise<boolean>} true nếu đã click thành công, false nếu không tìm thấy
+ */
+const humanScrollFeedUntilAndClick = async (page, targetSelector, options = {}) => {
+  const {
+    maxScrolls = 40,
+    minDistance = 600,
+    maxDistance = 1600,
+    pauseChance = 0.25,
+    minPauseMs = 1200,
+    maxPauseMs = 4000,
+    occasionalUpChance = 0.1,
+    clickSelectorWithin,
+    timeoutMs
+  } = options;
+
+  const startTime = Date.now();
+
+  const tryFocusAndClick = async () => {
+    const handle = await page.$(targetSelector);
+    if (!handle) return false;
+    try {
+      await handle.evaluate((el) => {
+        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+      });
+    } catch {}
+    await humanDelay(400, 900);
+
+    if (clickSelectorWithin) {
+      const inner = await handle.$(clickSelectorWithin);
+      if (inner) {
+        await humanClick(page, inner);
+        return true;
+      }
+    }
+
+    await humanClick(page, handle);
+    return true;
+  };
+
+  // Thử ngay lần đầu nếu đã có sẵn trong viewport/DOM
+  if (await tryFocusAndClick()) return true;
+
+  for (let i = 0; i < maxScrolls; i++) {
+    if (timeoutMs && Date.now() - startTime > timeoutMs) break;
+
+    const distance = Math.floor(Math.random() * (maxDistance - minDistance + 1)) + minDistance;
+    await humanScroll(page, distance, 'down');
+
+    if (await tryFocusAndClick()) return true;
+
+    if (Math.random() < occasionalUpChance) {
+      const upDistance = Math.floor(distance * (0.2 + Math.random() * 0.3));
+      await humanScroll(page, upDistance, 'up');
+      if (await tryFocusAndClick()) return true;
+    }
+
+    if (Math.random() < pauseChance) {
+      await humanDelay(minPauseMs, maxPauseMs);
+    } else {
+      await humanDelay(200, 800);
+    }
+  }
+
+  return false;
+};
+
+/**
  * Mô phỏng hover tự nhiên với ghost-cursor
  * @param {Object} page - Puppeteer page object
  * @param {string} selector - CSS selector của element
@@ -447,5 +586,7 @@ export {
   humanCopyPaste,
   humanUndoRedo,
   humanRandomMouseMovement,
-  humanTypeWithMistakes
+  humanTypeWithMistakes,
+  humanAutoScrollFeed,
+  humanScrollFeedUntilAndClick
 };
