@@ -276,11 +276,19 @@ export const humanHover = async (page, selector, duration = 2000) => {
 /**
  * Mô phỏng scroll đến element
  * @param {Object} page - Puppeteer page object
- * @param {string} selector - CSS selector của element
+ * @param {string|Object} selectorOrElement - CSS selector hoặc ElementHandle
  * @param {Object} options - Options cho scroll
  */
-export const humanScrollToElement = async (page, selector, options = {}) => {
-  const element = await page.$(selector);
+export const humanScrollToElement = async (page, selectorOrElement, options = {}) => {
+  let element;
+  
+  // Handle both selector string and ElementHandle
+  if (typeof selectorOrElement === 'string') {
+    element = await page.$(selectorOrElement);
+  } else {
+    element = selectorOrElement; // Assume it's already an ElementHandle
+  }
+  
   if (!element) return;
   
   await element.scrollIntoView();

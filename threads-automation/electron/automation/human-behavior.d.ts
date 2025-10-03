@@ -33,4 +33,6 @@ export type ScrollUntilClickOptions = {
 
 export function humanScrollFeedUntilAndClick(page: Page, targetSelector: string, options?: ScrollUntilClickOptions): Promise<boolean>
 
+export function humanScrollToElement(page: Page, selectorOrElement: string | ElementHandle<Node>, options?: any): Promise<void>
+
 
