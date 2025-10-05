@@ -566,6 +566,15 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
   await elementHandle.focus()
   await humanDelay(50, 150)
 
+  // If text contains surrogate pairs (emoji), type whole string to preserve them
+  const hasEmoji = /[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(text)
+  if (hasEmoji) {
+    // Type whole string with a human-like delay between keystrokes to preserve emojis
+    await page.keyboard.type(text, { delay: Math.random() * 70 + 40 })
+    await humanDelay(1000, 1500)
+    return
+  }
+
   for (let i = 0; i < text.length; i++) {
     const char = text[i]
 
@@ -594,7 +603,7 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
   }
   
   // Final delay to ensure all typing is complete
-  await humanDelay(200, 500)
+  await humanDelay(1000, 1500)
 };
 
 // Helper function để tạo lỗi gõ thực tế hơn

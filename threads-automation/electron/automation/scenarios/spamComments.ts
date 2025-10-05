@@ -534,28 +534,23 @@ export async function run(page: Page, input: Input = {}) {
     }
 
     // Step 4: Handle different comment scenarios
-    if(normalizedInput.searchKeyword && normalizedInput.topTabComment && normalizedInput.topTabComment > 0) {
+    if (normalizedInput.searchKeyword && normalizedInput.topTabComment && normalizedInput.topTabComment > 0) {
       console.log('Step 4: Using comment pool for top tab comments')
       await CommentFeedsAndSearch(page, normalizedInput, 'topTabComment', '.xamitd3 > .x78zum5')
-    } else if(normalizedInput.searchKeyword && normalizedInput.recentTabComment && normalizedInput.recentTabComment > 0) {
+    }
+
+    if (normalizedInput.searchKeyword && normalizedInput.recentTabComment && normalizedInput.recentTabComment > 0) {
       console.log('Step 4: Using comment pool for recent tab comments')
       // Click recent tab first
-      const recentTab = await page.$('.x1iyjqo2:nth-child(2) > .x1i10hfl')
-      if (recentTab) {
-        await humanClick(page, recentTab)
-        await humanDelay(1000, 2000)
+        await humanClick(page, '.x78zum5:nth-child(1) > .x6s0dn4 > .x1iyjqo2:nth-child(2) > .x1i10hfl')
+        await humanDelay(5000, 7000)
         await CommentFeedsAndSearch(page, normalizedInput, 'recentTabComment', '.xamitd3 > .x78zum5')
-      } else {
-        console.log('Step 4: Recent tab not found')
-      }
-    } else {
-      console.log('Step 4: No valid comment configuration found')
     }
     
     return { success: true }
 
   } catch (error) {
-    console.error('❌ Post and Comment automation failed:', error)
+    console.error('Post and Comment automation failed:', error)
     // Rethrow so upstream IPC can catch and report properly
     throw error
   } finally {
