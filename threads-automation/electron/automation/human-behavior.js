@@ -535,7 +535,7 @@ const humanRandomMouseMovement = async (page, duration = 3000) => {
  * @param {string} text - Text cần type
  * @param {number} mistakeRate - Tỷ lệ gõ sai (0-1)
  */
-const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate = 0.08) => {
+const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate = 0.05) => {
   let elementHandle = selectorOrElement
   if (typeof selectorOrElement === 'string') {
     const selector = selectorOrElement
@@ -553,15 +553,28 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
     })
   } catch {}
 
+  // Move cursor away from any hover areas first
+  try {
+    await page.mouse.move(100, 100)
+    await humanDelay(100, 200)
+  } catch {}
+
   await humanClick(page, elementHandle)
   await humanDelay(100, 200)
+
+  // Ensure element is focused and ready for typing
+  await elementHandle.focus()
+  await humanDelay(50, 150)
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i]
 
-    // Thỉnh thoảng gõ sai
+    // Thỉnh thoảng gõ sai (tạo lỗi thực tế hơn)
     if (Math.random() < mistakeRate) {
-      const wrongChar = String.fromCharCode(char.charCodeAt(0) + 1)
+      // Tạo lỗi gõ thực tế hơn: gõ ký tự gần đó trên bàn phím
+      const wrongChars = getNearbyKeys(char)
+      const wrongChar = wrongChars[Math.floor(Math.random() * wrongChars.length)]
+      
       await page.keyboard.type(wrongChar)
       await humanDelay(100, 300)
 
@@ -570,16 +583,35 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
       await humanDelay(100, 200)
     }
 
-    // Gõ ký tự đúng
-    await page.keyboard.type(char, { delay: Math.floor(Math.random() * 100) + 30 })
+    // Gõ ký tự đúng với delay tự nhiên
+    await page.keyboard.type(char)
     await humanDelay(30, 120)
 
-    // Thỉnh thoảng dừng lâu hơn
+    // Thỉnh thoảng dừng lâu hơn (như người suy nghĩ)
     if (Math.random() < 0.1) {
       await humanDelay(300, 800)
     }
   }
+  
+  // Final delay to ensure all typing is complete
+  await humanDelay(200, 500)
 };
+
+// Helper function để tạo lỗi gõ thực tế hơn
+const getNearbyKeys = (char) => {
+  const keyMap = {
+    'a': ['s', 'q', 'w'], 'b': ['v', 'g', 'n'], 'c': ['x', 'd', 'v'], 'd': ['s', 'e', 'f', 'c'],
+    'e': ['w', 'r', 'd'], 'f': ['d', 'r', 'g', 'v'], 'g': ['f', 't', 'h', 'b'], 'h': ['g', 'y', 'j', 'n'],
+    'i': ['u', 'o', 'k'], 'j': ['h', 'u', 'k'], 'k': ['j', 'i', 'l'], 'l': ['k', 'o', 'p'],
+    'm': ['n', 'j', 'k'], 'n': ['b', 'h', 'j', 'm'], 'o': ['i', 'p', 'l'], 'p': ['o', 'l'],
+    'q': ['w', 'a'], 'r': ['e', 't', 'f'], 's': ['a', 'd', 'w', 'x'], 't': ['r', 'y', 'g'],
+    'u': ['y', 'i', 'j'], 'v': ['c', 'f', 'b'], 'w': ['q', 'e', 's'], 'x': ['z', 's', 'c'],
+    'y': ['t', 'u', 'h'], 'z': ['x', 'a'], ' ': [' ']
+  }
+  
+  const lowerChar = char.toLowerCase()
+  return keyMap[lowerChar] || [char]
+}
 
 // Export tất cả functions đã được export ở trên
 export {

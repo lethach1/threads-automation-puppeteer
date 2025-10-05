@@ -1,4 +1,11 @@
 import type { Page } from 'puppeteer-core'
+import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
+// @ts-ignore
+import * as HB from '../human-behavior.js'
+// @ts-ignore
+import { humanScroll } from '../human-behavior.js'
+
 // @ts-ignore
 import { 
   humanDelay, 
@@ -6,10 +13,8 @@ import {
   humanClick,
   humanScrollToElement
 } from '../human-behavior.js'
-// @ts-ignore
-import * as HB from '../human-behavior.js'
-// @ts-ignore
-import { humanScroll } from '../human-behavior.js'
+
+
 
 type Input = {
   profile?: string
@@ -21,6 +26,7 @@ type Input = {
   linkShopee?: string
   prompt?: string
   gptKey?: string
+  geminiKey?: string
   items?: Array<{ 
     profile?: string
     feedsComment?: number
@@ -31,13 +37,27 @@ type Input = {
     linkShopee?: string
     prompt?: string
     gptKey?: string
+    geminiKey?: string
   }>
+}
+
+type NormalizedInput = {
+  profile?: string
+  feedsComment?: number
+  searchKeyword?: string
+  topTabComment?: number
+  recentTabComment?: number
+  commentPool?: string[]
+  linkShopee?: string[]
+  prompt?: string
+  gptKey?: string
+  geminiKey?: string
 }
 
 // Pure helper function to normalize input data
 const buildNormalizedInput = (input: Input) => {
   // Normalize input keys with only case-insensitive and singular/plural variants
-  const normalizeRecord = (raw: Record<string, any> = {}) => {
+  const normalizeRecord = (raw: Record<string, any> = {}): NormalizedInput => {
     try {
       const lowerMap: Record<string, any> = {}
       for (const [k, v] of Object.entries(raw)) {
@@ -58,8 +78,9 @@ const buildNormalizedInput = (input: Input) => {
       const recentTabComment = getByBase('Recent tab comment')
       const commentPool = getByBase('Comment pool')
       const linkShopee = getByBase('Link Shopee')
-      const prompt = getByBase('Promt')
+      const prompt = getByBase('Prompt')
       const gptKey = getByBase('GPT key')
+      const geminiKey = getByBase('Gemini key')
       
       return { 
         profile, 
@@ -67,10 +88,11 @@ const buildNormalizedInput = (input: Input) => {
         searchKeyword, 
         topTabComment: topTabComment ? parseInt(topTabComment) : undefined,
         recentTabComment: recentTabComment ? parseInt(recentTabComment) : undefined,
-        commentPool: commentPool ? commentPool.split(';').map(c => c.trim()).filter(c => c) : undefined,
-        linkShopee, 
+        commentPool: commentPool ? parseCommentPool(commentPool) : undefined,
+        linkShopee: parseShopeeLinks(linkShopee),
         prompt, 
-        gptKey 
+        gptKey,
+        geminiKey
       }
     } catch {
       return { 
@@ -80,88 +102,229 @@ const buildNormalizedInput = (input: Input) => {
         topTabComment: undefined, 
         recentTabComment: undefined, 
         commentPool: undefined, 
-        linkShopee: undefined, 
+        linkShopee: undefined,
         prompt: undefined, 
-        gptKey: undefined 
+        gptKey: undefined,
+        geminiKey: undefined
       }
     }
   }
 
-  const normalizedInput = { ...normalizeRecord(input as any) }
+  const normalizedInput = normalizeRecord(input as any)
   const baseItems = Array.isArray(input.items) && input.items.length > 0 ? input.items as any[] : [input as any]
   const items = baseItems.map((r) => ({ ...(r as any), ...normalizeRecord(r as any) }))
 
   return { normalizedInput, items }
 }
 
-// Refactored: handle commenting flow for search keyword results
-const CommentSearchKeyWord = async (
-  page: Page,
-  normalizedInput: { 
-    searchKeyword?: string; 
-    feedsComment?: number; 
+/**
+ * Parse comment pool string into array of individual comments
+ * @param commentPool - String containing comments separated by newlines
+ * @returns Array of individual comments
+ */
+const parseCommentPool = (commentPool: string): string[] => {
+  if (!commentPool || typeof commentPool !== 'string') {
+    return []
+  }
+  
+  return commentPool
+    .split('\n')
+    .map(comment => comment.trim())
+    .filter(comment => comment.length > 0)
+}
+
+/**
+ * Parse links string into array of individual links
+ * @param linkShopee - String containing links separated by newlines
+ * @returns Array of individual links
+ */
+const parseShopeeLinks = (linkShopee: string | undefined): string[] | undefined => {
+  if (!linkShopee || typeof linkShopee !== 'string') {
+    return undefined
+  }
+  
+  return linkShopee
+    .split('\n')
+    .map(link => link.trim())
+    .filter(link => link.length > 0)
+}
+
+/**
+ * Handle comment generation based on input
+ * @param normalizedInput - Normalized input data
+ * @param statusText - Optional status text from post
+ * @returns Generated comment text
+ */
+const handleComment = async (
+  normalizedInput: {
+    prompt?: string;
     commentPool?: string[];
     gptKey?: string;
-    prompt?: string;
-    linkShopee?: string;
-    topTabComment?: number;
-    recentTabComment?: number;
+    geminiKey?: string;
+    linkShopee?: string[];
+    searchKeyword?: string;
   },
-  mode: 'gptKey' | 'topTabComment' | 'recentTabComment'
+  statusText: string = ''
+): Promise<string> => {
+  let commentText = ''
+  
+  const prompt = normalizedInput.prompt
+    ? `${normalizedInput.prompt} ${statusText}`
+    : `Viết cho tôi comment ngắn gọn bằng tiếng việt cho bài post có nội dung sau để gắn link shopee affiliate sao cho ngôn từ giới trẻ tự nhiên như trên mạng xã hội threads, comment ngắn gọn thôi cho giống ngôn từ giới trẻ, ko cần lịch sự. Chỉ trả về một comment duy nhất: ${statusText}`
+
+  // Priority 1: Try Gemini if available
+  if(normalizedInput.geminiKey) {
+    const geminiComment = await generateGeminiComment(
+      prompt,
+      normalizedInput.geminiKey
+    )
+    if (geminiComment) {
+      commentText = geminiComment
+    }
+  }
+  
+  // Priority 2: Try ChatGPT if Gemini failed or not available
+  if (!commentText && normalizedInput.gptKey) {
+    const chatGPTComment = await generateChatGPTComment(
+      prompt,
+      normalizedInput.gptKey
+    )
+    if (chatGPTComment) {
+      commentText = chatGPTComment
+    }
+  }
+  
+  // Fallback to commentPool if both AI failed
+  if (!commentText) {
+    if (normalizedInput.commentPool && normalizedInput.commentPool.length > 0) {
+      commentText = normalizedInput.commentPool[Math.floor(Math.random() * normalizedInput.commentPool.length)]
+      console.log(`[AI] Fallback to pool comment: "${commentText}"`)
+    } else {
+      commentText = `Interesting post about ${normalizedInput.searchKeyword}!`
+      console.log(`[AI] Fallback to default comment: "${commentText}"`)
+    }
+  }
+  
+  // Append random Shopee link if provided
+  let finalComment = commentText
+  if (normalizedInput.linkShopee && normalizedInput.linkShopee.length > 0) {
+    const randomLink = normalizedInput.linkShopee[Math.floor(Math.random() * normalizedInput.linkShopee.length)]
+    finalComment = commentText + `\n\n${randomLink}`
+  }
+  return finalComment
+}
+
+/**
+ * Generate comment using ChatGPT API
+ * @param searchKeyword - The search keyword for context
+ * @param prompt - Custom prompt for ChatGPT
+ * @param gptKey - ChatGPT API key
+ * @returns Generated comment text or null if failed
+ */
+const generateChatGPTComment = async (
+  prompt: string,
+  gptKey?: string
+): Promise<string | null> => {
+  try {
+    console.log(`[ChatGPT] Using prompt: "${prompt}"`)
+    
+    // Initialize OpenAI client
+    const openai = new OpenAI({
+      apiKey: gptKey
+    });
+
+    // Call OpenAI API
+    const response = await openai.responses.create({
+      model: "gpt-5-nano",
+      input: prompt,
+      store: true,
+    });
+
+    const result = await response;
+    const generatedText = result.output_text || null
+    if (!generatedText) return null
+    console.log(`[ChatGPT] Generated comment: "${generatedText}"`)
+    return generatedText
+    
+  } catch (error) {
+    console.error('[ChatGPT] Generation failed:', error)
+    return null
+  }
+}
+
+/**
+ * Generate comment using Google Gemini AI
+ * @param searchKeyword - The search keyword for context
+ * @param prompt - Custom prompt for Gemini
+ * @param linkShopee - Optional Shopee link to append
+ * @param geminiKey - Gemini API key
+ * @returns Generated comment text or null if failed
+ */
+const generateGeminiComment = async (
+  prompt: string,
+  geminiKey?: string
+): Promise<string | null> => {
+  try {
+    console.log(`[Gemini] Using prompt: "${prompt}"`)
+    
+    // Initialize Gemini client
+    const ai = new GoogleGenAI({
+      apiKey: geminiKey
+    });
+
+    // Call Gemini API
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt
+    });
+
+    const generatedText = response.text || null
+    if (!generatedText) return null
+    console.log(`[Gemini] Generated comment: "${generatedText}"`)
+    return generatedText
+    
+  } catch (error) {
+    console.error('[Gemini] Generation failed:', error)
+    return null
+  }
+}
+
+
+// Handle commenting flow for search keyword results
+const CommentFeedsAndSearch = async (
+  page: Page,
+  normalizedInput: NormalizedInput,
+  mode: 'topTabComment' | 'recentTabComment' | 'feedsComment',
+  scopeSelector: string
 ) => {
   try {
     // Determine comment count based on mode
-    let commentCount = 1
+    let commentCount: number
     if (mode === 'topTabComment' && normalizedInput.topTabComment) {
       commentCount = normalizedInput.topTabComment
+    } else if (mode === 'feedsComment' && normalizedInput.feedsComment) {
+      commentCount = normalizedInput.feedsComment
     } else if (mode === 'recentTabComment' && normalizedInput.recentTabComment) {
       commentCount = normalizedInput.recentTabComment
+    } else {
+      throw new Error(`Invalid mode or missing count for mode=${mode}`)
     }
 
     console.log(`[CommentSearchKeyWord] Mode: ${mode}, Comment count: ${commentCount}`)
 
     // Scope: contain all loaded posts inside this container (strict, no fallback)
-    const SCOPE_SELECTOR = '.xamitd3 > .x78zum5'
-    let scope = await page.waitForSelector(SCOPE_SELECTOR, { timeout: 15000 })
+    const SCOPE_SELECTOR = scopeSelector
+    const scope = await page.waitForSelector(SCOPE_SELECTOR, { timeout: 15000 })
     if (!scope) {
       throw new Error(`Scope not found for selector: ${SCOPE_SELECTOR}`)
     }
 
     // Find all posts within scope
-    let posts = await scope.$$('div[data-pressable-container="true"]')
+    const posts = await scope.$$('div[data-pressable-container="true"]')
     console.log(`[feed] Found ${posts.length} posts in scope`)
 
-    // Debug: check if scope selector is correct
     if (posts.length === 0) {
-      console.log(`[debug] Scope selector "${SCOPE_SELECTOR}" found, but no posts inside`)
-      
-      // Try broader search to see if posts exist elsewhere
-      const allPosts = await page.$$('div[data-pressable-container="true"]')
-      console.log(`[debug] Total posts on page: ${allPosts.length}`)
-      
-      // Try alternative selectors
-      const altPosts = await scope.$$('article, [role="article"], div[data-testid*="post"]')
-      console.log(`[debug] Alternative selectors found: ${altPosts.length} elements`)
-      
-      if (allPosts.length > 0) {
-        console.log(`[debug] Posts exist but not in scope. Trying broader scope...`)
-        // Use broader scope if posts exist elsewhere
-        const broaderScope = await page.$('main, [role="main"], body')
-        if (broaderScope) {
-          const broaderPosts = await broaderScope.$$('div[data-pressable-container="true"]')
-          console.log(`[debug] Broader scope found ${broaderPosts.length} posts`)
-          if (broaderPosts.length > 0) {
-            console.log(`[feed] Using broader scope for posts`)
-            // Update scope and posts
-            scope = broaderScope
-            posts = broaderPosts
-          }
-        }
-      }
-      
-      if (posts.length === 0) {
-        throw new Error('No posts found in scope or page')
-      }
+      throw new Error('No posts found in scope')
     }
 
     // Loop for comment count (each iteration comments on 1 post)
@@ -188,52 +351,98 @@ const CommentSearchKeyWord = async (
         posts.push(...updatedPosts.slice(posts.length))
       }
       
-      // Click reply button within this post
-      const replyButton = await currentPost.$('div[role="button"] svg[aria-label="Reply"], div[role="button"] svg[aria-label="Trả lời"], div[role="button"] svg[title="Reply"], div[role="button"] svg[title="Trả lời"]')
+      // Click reply button within this post (click the container button, not the SVG)
+      const replyIconSelector = 'div[role="button"] svg[aria-label="Reply"], div[role="button"] svg[aria-label="Trả lời"]'
+      const replyIcon = await currentPost.$(replyIconSelector)
       
-      if (replyButton) {
-        console.log(`[feed] Found reply button, clicking...`)
-        await humanClick(page, replyButton)
+      if (replyIcon) {
+        // Resolve container div[role="button"] that wraps the SVG
+        const replyButtonContainer = await replyIcon.evaluateHandle((el) => {
+          const svg = el as Element
+          const container = svg.closest('div[role="button"]') as Element | null
+          return container ?? svg.parentElement
+        })
+        console.log(`[feed] Found reply button, clicking container...`)
+        // Re-query icon just before click to avoid stale handles after scroll/lazyload
+        const recheckIcon = await currentPost.$(replyIconSelector)
+        if (!recheckIcon) {
+          console.log('[feed] Reply icon became stale, skipping this post')
+          continue
+        }
+        await humanClick(page, replyButtonContainer as any)
         await humanDelay(600, 1200)
+
+        // Move cursor away from any potential hover areas to prevent profile popup
+        try {
+          // Try multiple methods to ensure cursor moves
+          // Method 1: Direct mouse move
+          await page.mouse.move(50, 50)
+          await humanDelay(200, 300)
+          
+          // Method 2: Move to a specific element (like top navigation)
+          try {
+            const topNav = await page.$('header, nav, [role="banner"]')
+            if (topNav) {
+              await topNav.hover()
+              await humanDelay(200, 300)
+            }
+          } catch (e) {
+            console.log('[feed] Could not hover top nav:', e instanceof Error ? e.message : String(e))
+          }
+          
+          // Method 3: Move to viewport corner
+          await page.evaluate(() => {
+            window.scrollTo(0, 0) // Scroll to top
+          })
+          await page.mouse.move(10, 10) // Move to top-left corner
+          
+          await humanDelay(500, 800) // Wait longer to ensure cursor moved
+          console.log('[feed] Cursor moved to safe area using multiple methods')
+        } catch (e) {
+          console.log('[feed] Could not move cursor:', e instanceof Error ? e.message : String(e))
+        }
 
         // Step B: Focus composer textbox and type comment with mistakes
         try {
-          const composerSel = '[contenteditable="true"][role="textbox"]'
-          const composer = await page.waitForSelector(composerSel, { timeout: 5000 })
+          // Wait for composer to appear within current post after clicking reply button
+          const composer = await page.waitForSelector('div.x1wxtd61 [contenteditable="true"][role="textbox"]', { timeout: 5000 })          
+          // Just focus on composer without any hover/click to avoid errors
           if (composer) {
-            let commentText = ''
-            
-            // Scenario 1: ChatGPT generation (if gptKey exists)
-            if (mode === 'gptKey' && normalizedInput.gptKey) {
-              try {
-                // Generate comment using ChatGPT API
-                const prompt = normalizedInput.prompt || 'Generate a relevant comment for this social media post'
-                const shopeeLink = normalizedInput.linkShopee ? `\n\nCheck out: ${normalizedInput.linkShopee}` : ''
-                
-                // TODO: Implement ChatGPT API call here using prompt and shopeeLink
-                // For now, use a placeholder (prompt variable will be used in actual ChatGPT integration)
-                console.log(`[post] Will use prompt: "${prompt}" for ChatGPT generation`)
-                commentText = `Generated comment for: ${normalizedInput.searchKeyword}${shopeeLink}`
-                console.log(`[post] Generated ChatGPT comment: "${commentText}"`)
-              } catch (e) {
-                console.log('[post] ChatGPT generation failed, using fallback:', e)
-                commentText = 'Great post!'
-              }
-            } 
-            // Scenario 2 & 3: Use comment pool for topTabComment or recentTabComment
-            else if (mode === 'topTabComment' || mode === 'recentTabComment') {
-              if (normalizedInput.commentPool && normalizedInput.commentPool.length > 0) {
-                commentText = normalizedInput.commentPool[Math.floor(Math.random() * normalizedInput.commentPool.length)]
-                console.log(`[post] Using pool comment: "${commentText}"`)
+            console.log(`[feed] Found composer textbox, typing comment...`)
+            // Focus directly without hovering or clicking
+            await composer.focus()
+            await humanDelay(200, 300)
+          }
+          if (composer) {
+            // Get status text from current post  
+            let statusText = ''
+            try {
+              const statusElement = await currentPost.$('div.x1wxtd61 .x1xdureb:nth-child(4) .x1a6qonq')
+              if (statusElement) {
+                statusText = await statusElement.evaluate(el => el.textContent || '')
+                // Strip trailing Translate helper if present and normalize
+                statusText = statusText.replace(/\s*Translate\s*$/i, '').trim()
+                console.log(`[feed] Found status text: "${statusText.slice(0, 100)}..."`)
               } else {
-                console.log(`[post] No comment pool provided, skipping comment`)
-                continue
+                console.log('[feed] Status text element not found')
               }
+            } catch (e) {
+              console.log('[feed] Error getting status text:', e instanceof Error ? e.message : String(e))
             }
             
-            console.log(`[post] Typing comment: "${commentText}"`)
-            try { await humanClick(page as any, composer as any) } catch {}
-            await humanTypeWithMistakes(page as any, composer as any, commentText)
+            // Use handleComment function to generate comment
+            const commentText = await handleComment(normalizedInput, statusText)
+            
+            if (commentText) {
+              console.log(`[post] Typing comment: "${commentText}"`)
+              //click vào viết comment
+              await humanClick(page, composer)
+              await humanDelay(600, 1200)
+              await humanTypeWithMistakes(page, composer, commentText)
+            } else {
+              console.log('[post] No comment generated, skipping')
+              continue
+            }
           } else {
             console.log('[post] Composer textbox not found')
           }
@@ -241,42 +450,17 @@ const CommentSearchKeyWord = async (
           console.log('[post] Error while typing comment:', e)
         }
 
-        // Step C: Click post comment (submit)  
-        try {
-          const submitSelPrimary = '.x2lah0s:nth-child(1) > .x9dqhi0'
-          let submitBtn = await page.$(submitSelPrimary)
-          if (!submitBtn) {
-            // fallback: try a broader container
-            const submitSelFallback = '.x2lah0s .x9dqhi0'
-            submitBtn = await page.$(submitSelFallback)
-          }
-          if (submitBtn) {
-            console.log('[post] Clicking submit comment button')
-            try {
-              await submitBtn.evaluate((el: any) => el.click())
-            } catch {
-              try { await humanClick(page as any, submitBtn as any) } catch {}
-            }
-            await humanDelay(600, 1200)
-          } else {
-            console.log('[post] Submit comment button not found')
-          }
-          } catch (e) {
-            console.log('[post] Error while submitting comment:', e)
-          }
-          
+        // Step C: Click post comment (submit)   
+        await humanClick(page, '.x2lah0s:nth-child(1) > .x9dqhi0')        
           console.log(`[CommentSearchKeyWord] Successfully commented on post index=${commentIteration}`)
         } else {
           console.log(`[feed] Reply button not found for post index=${commentIteration}, skipping`)
         }
       
-      console.log(`✅ Comment iteration ${commentIteration + 1}/${commentCount} completed.`)
+      console.log(`Comment iteration ${commentIteration + 1}/${commentCount} completed.`)
       
       // Add delay between comment iterations
-      if (commentIteration < commentCount - 1) {
-        console.log('[CommentSearchKeyWord] Waiting before next comment iteration...')
         await humanDelay(2000, 4000)
-      }
     }
 
     console.log(`✅ All comment iterations completed. Total: ${commentCount} iteration(s)`)      
@@ -311,6 +495,13 @@ export async function run(page: Page, input: Input = {}) {
     await page.goto('https://threads.com/', { waitUntil: 'networkidle2' })
     await humanDelay(2000, 4000)
 
+    // Handle feeds comments first, before any search navigation
+    if (normalizedInput.feedsComment && normalizedInput.feedsComment > 0) {
+      console.log('Step 1b: Using comment pool for feeds comments (before search)')
+      await CommentFeedsAndSearch(page, normalizedInput, 'feedsComment', 'div.x1l7klhg')
+      return { success: true }
+    }
+
     // Step 2: Click search button
     console.log('Step 2: Click search button')
     try {
@@ -329,35 +520,31 @@ export async function run(page: Page, input: Input = {}) {
       const searchInput = await page.waitForSelector('input[type="search"]', { timeout: 10000 })
       if (!searchInput) throw new Error('Search input not found')
       await humanTypeWithMistakes(page, searchInput, normalizedInput.searchKeyword || 'nails')
+      await humanDelay(500, 1000)
       
       // Press Enter
       await page.keyboard.press('Enter')
-      await humanDelay(2000, 3000)
+      await humanDelay(7000, 10000)
     } catch (error) {
       console.error('Failed to type search keyword:', error)
       throw error
     }
 
     // Step 4: Handle different comment scenarios
-    if(normalizedInput.gptKey) {
-      console.log('Step 4: Using ChatGPT to generate comments')
-      await CommentSearchKeyWord(page, normalizedInput, 'gptKey')
-    } else if(normalizedInput.topTabComment && normalizedInput.topTabComment > 0) {
+    if(normalizedInput.searchKeyword && normalizedInput.topTabComment && normalizedInput.topTabComment > 0) {
       console.log('Step 4: Using comment pool for top tab comments')
-      await CommentSearchKeyWord(page, normalizedInput, 'topTabComment')
-    } else if(normalizedInput.recentTabComment && normalizedInput.recentTabComment > 0) {
+      await CommentFeedsAndSearch(page, normalizedInput, 'topTabComment', '.xamitd3 > .x78zum5')
+    } else if(normalizedInput.searchKeyword && normalizedInput.recentTabComment && normalizedInput.recentTabComment > 0) {
       console.log('Step 4: Using comment pool for recent tab comments')
       // Click recent tab first
-      try {
-        const recentTab = await page.$('.x1iyjqo2:nth-child(2) > .x1i10hfl')
-        if (recentTab) {
-          await humanClick(page as any, recentTab as any)
-          await humanDelay(1000, 2000)
-        }
-      } catch (e) {
-        console.log('[run] Failed to click recent tab:', e)
+      const recentTab = await page.$('.x1iyjqo2:nth-child(2) > .x1i10hfl')
+      if (recentTab) {
+        await humanClick(page, recentTab)
+        await humanDelay(1000, 2000)
+        await CommentFeedsAndSearch(page, normalizedInput, 'recentTabComment', '.xamitd3 > .x78zum5')
+      } else {
+        console.log('Step 4: Recent tab not found')
       }
-      await CommentSearchKeyWord(page, normalizedInput, 'recentTabComment')
     } else {
       console.log('Step 4: No valid comment configuration found')
     }
