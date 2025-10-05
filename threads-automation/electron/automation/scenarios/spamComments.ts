@@ -170,7 +170,7 @@ const handleComment = async (
   
   const prompt = normalizedInput.prompt
     ? `${normalizedInput.prompt} ${statusText}`
-    : `Viết cho tôi comment ngắn gọn bằng tiếng việt cho bài post có nội dung sau để gắn link shopee affiliate sao cho ngôn từ giới trẻ tự nhiên như trên mạng xã hội threads, comment ngắn gọn thôi cho giống ngôn từ giới trẻ, ko cần lịch sự. Chỉ trả về một comment duy nhất: ${statusText}`
+    : `Viết cho tôi comment ngắn gọn bằng tiếng việt cho bài post có nội dung sau để gắn link shopee affiliate sao cho ngôn từ giới trẻ tự nhiên như trên mạng xã hội threads, comment ngắn gọn thôi cho giống ngôn từ giới trẻ, ko cần lịch sự. Chỉ trả về một comment duy nhất, ko cần gắn link hay hướng dẫn, tôi tự gắn.: ${statusText}`
 
   // Priority 1: Try Gemini if available
   if(normalizedInput.geminiKey) {
@@ -209,7 +209,7 @@ const handleComment = async (
   let finalComment = commentText
   if (normalizedInput.linkShopee && normalizedInput.linkShopee.length > 0) {
     const randomLink = normalizedInput.linkShopee[Math.floor(Math.random() * normalizedInput.linkShopee.length)]
-    finalComment = commentText + `\n\n${randomLink}`
+    finalComment = commentText + `\n${randomLink}`
   }
   return finalComment
 }
@@ -417,14 +417,18 @@ const CommentFeedsAndSearch = async (
             // Get status text from current post  
             let statusText = ''
             try {
-              const statusElement = await currentPost.$('div.x1wxtd61 .x1xdureb:nth-child(4) .x1a6qonq')
+              const statusSelector = 'div.x1wxtd61 .x1xdureb:nth-child(4) .x1a6qonq'
+              const statusElement = await page.$(statusSelector)
               if (statusElement) {
-                statusText = await statusElement.evaluate(el => el.textContent || '')
+                const rawText = await statusElement.evaluate(el => el.textContent || '')
                 // Strip trailing Translate helper if present and normalize
-                statusText = statusText.replace(/\s*Translate\s*$/i, '').trim()
-                console.log(`[feed] Found status text: "${statusText.slice(0, 100)}..."`)
+                statusText = rawText.replace(/\s*Translate\s*$/i, '').trim()
+                console.log(`[feed] Status text: "${statusText.slice(0, 100)}..." (len=${statusText.length})`)
+                if (!statusText) {
+                  console.log('[feed] Warning: statusText is empty after cleaning')
+                }
               } else {
-                console.log('[feed] Status text element not found')
+                console.log(`[feed] Status text element not found for selector: ${statusSelector}`)
               }
             } catch (e) {
               console.log('[feed] Error getting status text:', e instanceof Error ? e.message : String(e))
@@ -499,7 +503,6 @@ export async function run(page: Page, input: Input = {}) {
     if (normalizedInput.feedsComment && normalizedInput.feedsComment > 0) {
       console.log('Step 1b: Using comment pool for feeds comments (before search)')
       await CommentFeedsAndSearch(page, normalizedInput, 'feedsComment', 'div.x1l7klhg')
-      return { success: true }
     }
 
     // Step 2: Click search button
