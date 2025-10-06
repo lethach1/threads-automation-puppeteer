@@ -7,8 +7,6 @@ import { humanScroll } from '../human-behavior.js'
 // @ts-ignore
 import { 
   humanDelay, 
-  humanTypeWithMistakes,
-  humanClick,
   humanScrollToElement
 } from '../human-behavior.js'
 
@@ -21,50 +19,29 @@ import { createWriteStream } from 'fs'
 type Input = {
   accountName?: string
   linkDirectory?: string
+  items?: any[]
 }
 
-type NormalizedInput = {
-    accountName?: string
-    linkDirectory?: string
+type AccountItem = {
+  accountName: string
+  linkDirectory?: string
 }
 
-// Pure helper function to normalize input data
-const buildNormalizedInput = (input: Input) => {
-  // Normalize input keys with only case-insensitive and singular/plural variants
-  const normalizeRecord = (raw: Record<string, any> = {}): NormalizedInput => {
-    try {
-      const lowerMap: Record<string, any> = {}
-      for (const [k, v] of Object.entries(raw)) {
-        lowerMap[String(k).toLowerCase()] = v
-      }
-      const getByBase = (base: string) => {
-        const singular = base.toLowerCase()
-        const plural = `${singular}s`
-        const val = lowerMap[singular] ?? lowerMap[plural]
-        if (val == null) return undefined
-        const str = String(val).trim()
-        return str ? str : undefined
-      }
-      const accountName = getByBase('Account Name')
-      const linkDirectory = getByBase('Link Directory')
-      
-      return { 
-        accountName, 
-        linkDirectory
-      }
-    } catch {
-      return { 
-        accountName: undefined, 
-        linkDirectory: undefined
-      }
-    }
+const normalizeAccountsFromInput = (input: any): AccountItem[] => {
+  const rows: AccountItem[] = []
+  const baseItems = Array.isArray(input?.items) && input.items.length > 0 ? input.items : [input]
+  for (const row of baseItems) {
+    if (!row) continue
+    const lower: Record<string, any> = {}
+    for (const [k, v] of Object.entries(row)) lower[String(k).toLowerCase()] = v
+    const accountNameRaw = lower['account name'] ?? lower['username'] ?? lower['handle']
+    const linkDirRaw = lower['link directory'] ?? lower['folder directory']
+    const accountName = accountNameRaw != null ? String(accountNameRaw).trim() : ''
+    const linkDirectory = linkDirRaw != null ? String(linkDirRaw).trim() : undefined
+    if (accountName) rows.push({ accountName, linkDirectory })
   }
-
-  const normalizedInput = normalizeRecord(input as any)
-
-  return { normalizedInput }
+  return rows
 }
-
 
 // Helpers: filesystem and downloads
 const ensureDir = async (dirPath: string) => {
@@ -146,9 +123,9 @@ const savePostMediaFromHandle = async (
 }
 
 // Handle commenting flow for search keyword results
-const CommentFeedsAndSearch = async (
+const dowloadContentAndImages = async (
   page: Page,
-  normalizedInput: NormalizedInput,
+  linkDirectory: string | undefined,
   scopeSelector: string
 ) => {
   try {
@@ -172,7 +149,7 @@ const CommentFeedsAndSearch = async (
     let noNewPostsStreak = 0
     const MAX_NO_NEW_POSTS_STREAK = 3
 
-    const baseOutputDir = normalizedInput.linkDirectory || path.join(process.cwd(), 'downloads')
+    const baseOutputDir = linkDirectory || path.join(process.cwd(), 'downloads')
     await ensureDir(baseOutputDir)
 
     while (true) {
@@ -231,96 +208,19 @@ const buildThreadsProfileUrl = (accountName?: string) => {
   return `https://www.threads.com/${handle}`
 }
 
-type AccountItem = {
-  accountName: string
-  linkDirectory?: string
-}
-
-const normalizeAccountsFromInput = (input: any): AccountItem[] => {
-  const rows: AccountItem[] = []
-  const candidates = Array.isArray(input?.accounts)
-    ? input.accounts
-    : Array.isArray(input?.items)
-      ? input.items
-      : []
-  for (const row of candidates) {
-    if (!row) continue
-    const lower: Record<string, any> = {}
-    for (const [k, v] of Object.entries(row)) lower[String(k).toLowerCase()] = v
-    const accountName = String(lower['account name'] ?? lower['accountname'] ?? lower['username'] ?? lower['handle'] ?? '').trim()
-    const linkDirectoryRaw = lower['folder directory'] ?? lower['link directory'] ?? lower['folder'] ?? lower['directory']
-    const linkDirectory = linkDirectoryRaw != null ? String(linkDirectoryRaw).trim() : undefined
-    if (accountName) rows.push({ accountName, linkDirectory })
-  }
-  return rows
-}
-
-const processOneProfile = async (
-  page: Page,
-  accountName: string,
-  linkDirectory?: string
-) => {
-  const profileUrl = buildThreadsProfileUrl(accountName)
-  const targetUrl = profileUrl ?? 'https://threads.com/'
-  console.log(`[profile] Navigate: ${targetUrl}`)
-  await page.goto(targetUrl, { waitUntil: 'networkidle2' })
-  await humanDelay(1500, 2500)
-
-  const posts = await page.$$('div[data-pressable-container="true"]')
-  console.log(`[feed] Found ${posts.length} posts initially`)
-
-  let currentIndex = 0
-  let noNewPostsStreak = 0
-  const MAX_NO_NEW_POSTS_STREAK = 3
-
-  const baseOutputDir = linkDirectory || path.join(process.cwd(), 'downloads')
-  await ensureDir(baseOutputDir)
-
-  while (true) {
-    const hasUnprocessedPost = currentIndex < posts.length
-    if (hasUnprocessedPost) {
-      console.log(`[feed] Processing post at index=${currentIndex}`)
-      const currentPost = posts[currentIndex]
-      if (!currentPost) {
-        currentIndex++
-      } else {
-        await humanScrollToElement(page, currentPost)
-        await savePostMediaFromHandle(currentPost, baseOutputDir, currentIndex)
-        currentIndex++
-      }
-    } else {
-      await humanScroll(page, 800)
-    }
-
-    const updatedPosts = await page.$$('div[data-pressable-container="true"]')
-    if (updatedPosts.length > posts.length) {
-      posts.push(...updatedPosts.slice(posts.length))
-      noNewPostsStreak = 0
-    } else {
-      noNewPostsStreak++
-    }
-
-    const processedAllLoaded = currentIndex >= posts.length
-    const giveUpLoadingMore = noNewPostsStreak >= MAX_NO_NEW_POSTS_STREAK
-    if (processedAllLoaded && giveUpLoadingMore) break
-  }
-}
+// Removed duplicate per-profile processing; using dowloadContentAndImages instead
 
 export async function run(page: Page, input: Input = {}) {
   page.setDefaultTimeout(20000)
   try {
     console.log('Starting surfing threads and commenting...')
     
-    const { normalizedInput } = buildNormalizedInput(input)
-    
     console.log('📝 Raw Input:', input)
-    console.log('[input] normalized:', normalizedInput)
  
     // Build accounts list from provided object (no CSV/Excel reading here)
     const accounts: AccountItem[] = normalizeAccountsFromInput(input)
-    if (normalizedInput.accountName && accounts.length === 0) {
-      accounts.push({ accountName: normalizedInput.accountName, linkDirectory: normalizedInput.linkDirectory })
-    }
+    const preview = accounts[0] ? { accountName: accounts[0].accountName, linkDirectory: accounts[0].linkDirectory } : { accountName: undefined, linkDirectory: undefined }
+    console.log('[input] normalized:', preview)
 
     if (accounts.length === 0) {
       console.warn('[run] No accounts provided in object input')
@@ -329,8 +229,12 @@ export async function run(page: Page, input: Input = {}) {
 
     for (let i = 0; i < accounts.length; i++) {
       const row = accounts[i]
-      console.log(`[run] Processing account ${i + 1}/${accounts.length}: ${row.accountName}`)
-      await processOneProfile(page, row.accountName, row.linkDirectory)
+      const profileUrl = buildThreadsProfileUrl(row.accountName)
+      const targetUrl = profileUrl ?? 'https://threads.com/'
+      console.log(`[profile] Navigate: ${targetUrl}`)
+      await page.goto(targetUrl, { waitUntil: 'networkidle2' })
+      await humanDelay(1500, 2500)
+      await dowloadContentAndImages(page, row.linkDirectory, 'div.x1iorvi4:nth-child(2)')
       await humanDelay(800, 1500)
     }
 

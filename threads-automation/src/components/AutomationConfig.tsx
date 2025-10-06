@@ -181,6 +181,7 @@ export default function AutomationConfig({ onContinue }: Props) {
     { id: 'postAndComment', name: 'Posts and Comments', description: 'Automate posting and commenting on threads' },
     { id: 'login', name: 'Login Automation', description: 'Automate user login process' },
     { id: 'spamComments', name: 'Spam Comments', description: 'Spam comments automation with user input' },
+    { id: 'downloadStatusAndImages', name: 'Download Status & Images', description: 'Download posts\' statuses and media from profiles' },
     ...customScripts.map(script => ({
       id: script.id,
       name: script.name,
@@ -490,14 +491,16 @@ if (fs.existsSync(input.filePath)) {
                           const fileExtension = currentScenario.filePath.toLowerCase().split('.').pop()
                           const fileType = fileExtension === 'csv' ? 'CSV' : 
                                           ['xlsx', 'xls', 'xlsm'].includes(fileExtension || '') ? 'Excel' : 'Data'
-                          const groupedData = getGroupedData(currentScenario.csvData)
+                          const headers = Object.keys(currentScenario.csvData[0] || {})
+                          const hasProfile = headers.some(h => String(h).toLowerCase().includes('profile'))
+                          const groupedData = hasProfile ? getGroupedData(currentScenario.csvData) : {}
                           
                           return (
                             <div className="mt-4">
                               <div className="flex items-center justify-between mb-2">
                                 <h4 className="text-sm font-medium">
                                   {fileType} Preview ({currentScenario.csvData.length} rows total)
-                                  {viewAsObject && (
+                                  {viewAsObject && hasProfile && (
                                     <span className="text-xs text-muted-foreground ml-2">
                                       - Grouped by profile ({Object.keys(groupedData).length} profiles)
                                     </span>
@@ -506,7 +509,7 @@ if (fs.existsSync(input.filePath)) {
                                 <div className="flex items-center gap-3">
                                   <div className="flex items-center gap-2">
                                     <Label htmlFor="view-toggle" className="text-xs text-muted-foreground">
-                                      {viewAsObject ? 'Object View' : 'Table View'}
+                                      {viewAsObject ? 'Table View' : 'Object View'}
                                     </Label>
                                     <Switch
                                       id="view-toggle"
@@ -519,43 +522,36 @@ if (fs.existsSync(input.filePath)) {
                               
                               <div className="border rounded-md overflow-auto bg-background max-h-96">
                                 {viewAsObject ? (
-                                  // Object view - raw JSON format for dev
+                                  // Object view - grouped if profile exists, else plain rows
                                   <div className="p-4">
-                                    {Object.keys(groupedData).length === 0 ? (
-                                      <div className="text-center text-muted-foreground py-8">
-                                        <p>No profile column found in data</p>
-                                        <p className="text-xs mt-1">Data will be processed as-is</p>
-                                      </div>
-                                    ) : (
-                                      <div className="space-y-4">
-                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                                          <div className="flex items-center justify-between">
-                                            <div>
-                                              <h5 className="font-medium text-sm text-blue-800 mb-1">
-                                                📋 Raw Object Data (for dev mapping)
-                                              </h5>
-                                              <p className="text-xs text-blue-600">
-                                                Copy this object structure to use in your automation scripts
-                                              </p>
-                                            </div>
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleCopyToClipboard(groupedData)}
-                                              className="h-7 px-2 text-xs"
-                                              title="Copy raw object to clipboard"
-                                            >
-                                              <Copy className="h-3 w-3 mr-1" />
-                                              Copy
-                                            </Button>
+                                    <div className="space-y-4">
+                                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                                        <div className="flex items-center justify-between">
+                                          <div>
+                                            <h5 className="font-medium text-sm text-blue-800 mb-1">
+                                              📋 {hasProfile ? 'Grouped Object Data' : 'Raw Object Data'} (for dev mapping)
+                                            </h5>
+                                            <p className="text-xs text-blue-600">
+                                              Copy this object structure to use in your automation scripts
+                                            </p>
                                           </div>
-                                        </div>
-                                        
-                                        <div className="bg-gray-200 text-black p-4 rounded-lg font-mono text-xs overflow-auto">
-                                          <pre>{JSON.stringify(groupedData, null, 2)}</pre>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleCopyToClipboard(hasProfile ? groupedData : currentScenario.csvData)}
+                                            className="h-7 px-2 text-xs"
+                                            title="Copy raw object to clipboard"
+                                          >
+                                            <Copy className="h-3 w-3 mr-1" />
+                                            Copy
+                                          </Button>
                                         </div>
                                       </div>
-                                    )}
+                                      
+                                      <div className="bg-gray-200 text-black p-4 rounded-lg font-mono text-xs overflow-auto">
+                                        <pre>{JSON.stringify(hasProfile ? groupedData : currentScenario.csvData, null, 2)}</pre>
+                                      </div>
+                                    </div>
                                   </div>
                                 ) : (
                                   // Table view - all rows
@@ -758,13 +754,13 @@ if (fs.existsSync(input.filePath)) {
                    const height = toInt(currentScenario.windowHeight, 600)
                    const scale = toInt(currentScenario.scalePercent, 100)
                    const threads = toInt(currentScenario.numThreads, 5)
-                   const config = {
+                  const config = {
                      windowWidth: Math.max(100, width),
                      windowHeight: Math.max(100, height),
                      scalePercent: Math.min(200, Math.max(10, scale)),
                      numThreads: Math.max(1, threads),
                      csvData: currentScenario.csvData,
-                     selectedScenario: selectedScript
+                    selectedScenario: selectedScript
                    }
                    onContinue?.(config)
                  }}
