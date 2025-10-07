@@ -96,7 +96,8 @@ export const runAutomationOnPage = async (
         // Map scenario IDs to actual file names
         const scenarioMap: Record<string, string> = {
           'spamComments': 'spamComments',
-          'postAndComment': 'postAndComment'
+          'postAndComment': 'postAndComment',
+          'downloadStatusAndImages': 'downloadStatusAndImages'
         }
         
         const mappedScenario = scenarioMap[scenario] || scenario

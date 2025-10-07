@@ -22,32 +22,86 @@ type Input = {
   items?: any[]
 }
 
-type AccountItem = {
-  accountName: string
+type NormalizedInput = {
+  accountName?: string
   linkDirectory?: string
 }
 
-const normalizeAccountsFromInput = (input: any): AccountItem[] => {
-  const rows: AccountItem[] = []
-  const baseItems = Array.isArray(input?.items) && input.items.length > 0 ? input.items : [input]
-  for (const row of baseItems) {
-    if (!row) continue
-    const lower: Record<string, any> = {}
-    for (const [k, v] of Object.entries(row)) lower[String(k).toLowerCase()] = v
-    const accountNameRaw = lower['account name'] ?? lower['username'] ?? lower['handle']
-    const linkDirRaw = lower['link directory'] ?? lower['folder directory']
-    const accountName = accountNameRaw != null ? String(accountNameRaw).trim() : ''
-    const linkDirectory = linkDirRaw != null ? String(linkDirRaw).trim() : undefined
-    if (accountName) rows.push({ accountName, linkDirectory })
+// Pure helper function to normalize input data
+const buildNormalizedInput = (input: Input) => {
+  // Normalize input keys with only case-insensitive and singular/plural variants
+  const normalizeRecord = (raw: Record<string, any> = {}): NormalizedInput => {
+    try {
+      const lowerMap: Record<string, any> = {}
+      for (const [k, v] of Object.entries(raw)) {
+        lowerMap[String(k).toLowerCase()] = v
+      }
+      const getByBase = (base: string) => {
+        const singular = base.toLowerCase()
+        const plural = `${singular}s`
+        const val = lowerMap[singular] ?? lowerMap[plural]
+        if (val == null) return undefined
+        const str = String(val).trim()
+        return str ? str : undefined
+      }
+      const accountName = getByBase('Account Name')
+      const linkDirectory = getByBase('Folder Directory')
+
+      return { 
+        accountName,
+        linkDirectory
+      }
+    } catch {
+      return { 
+        accountName: undefined, 
+        linkDirectory: undefined
+      }
+    }
   }
-  return rows
+
+  const normalizedInput = normalizeRecord(input as any)
+  // Handle both direct array input and object with items property
+  const baseItems = Array.isArray(input) ? input as any[] : 
+                   (Array.isArray(input.items) && input.items.length > 0 ? input.items as any[] : [input as any])
+  const items = baseItems.map((r) => ({ ...(r as any), ...normalizeRecord(r as any) }))
+
+  return { normalizedInput, items }
 }
+
 
 // Helpers: filesystem and downloads
 const ensureDir = async (dirPath: string) => {
   try {
+    // Validate path before creating
+    if (!dirPath || dirPath.trim() === '') {
+      throw new Error('Directory path is empty')
+    }
+    
+    // Check if path contains invalid characters or is outside allowed directories
+    const normalizedPath = path.resolve(dirPath)
+    const cwd = process.cwd()
+    
+    // Ensure path is within allowed directories (Documents, Desktop, Downloads)
+    const userHome = process.env.USERPROFILE || process.env.HOME || ''
+    const allowedPaths = [
+      path.join(userHome, 'Documents'),
+      path.join(userHome, 'Desktop'), 
+      path.join(userHome, 'Downloads'),
+      cwd // Current working directory as fallback
+    ]
+    
+    const isAllowed = allowedPaths.some(allowedPath => normalizedPath.startsWith(allowedPath))
+    if (!isAllowed) {
+      console.warn(`[fs] Path ${dirPath} is not in allowed directories, using fallback`)
+      throw new Error(`Path ${dirPath} is not accessible`)
+    }
+    
     await fs.mkdir(dirPath, { recursive: true })
-  } catch {}
+    console.log(`[fs] Created directory: ${dirPath}`)
+  } catch (error) {
+    console.error(`[fs] Failed to create directory ${dirPath}:`, error)
+    throw error
+  }
 }
 
 const getFileExtensionFromUrl = (mediaUrl: string, fallback: string) => {
@@ -78,9 +132,16 @@ const extractMediaUrlsFromPost = async (postHandle: any) => {
 }
 
 const downloadFile = async (mediaUrl: string, filePath: string) => {
-  const res = await fetch(mediaUrl)
-  if (!res.ok || !res.body) throw new Error(`Failed to download ${mediaUrl}: ${res.status}`)
-  await pipeline(res.body as any, createWriteStream(filePath))
+  try {
+    console.log(`[download] Starting download: ${mediaUrl} -> ${filePath}`)
+    const res = await fetch(mediaUrl)
+    if (!res.ok || !res.body) throw new Error(`Failed to download ${mediaUrl}: ${res.status}`)
+    await pipeline(res.body as any, createWriteStream(filePath))
+    console.log(`[download] Successfully downloaded: ${filePath}`)
+  } catch (error) {
+    console.error(`[download] Failed to download ${mediaUrl}:`, error)
+    throw error
+  }
 }
 
 const savePostMediaFromHandle = async (
@@ -93,6 +154,9 @@ const savePostMediaFromHandle = async (
 
   const folderName = `post_${String(postIndex).padStart(4, '0')}`
   const postDir = path.join(baseOutputDir, sanitize(folderName))
+  
+  // Ensure both base directory and post directory exist
+  await ensureDir(baseOutputDir)
   await ensureDir(postDir)
 
   let mediaIndex = 0
@@ -102,9 +166,9 @@ const savePostMediaFromHandle = async (
     const fp = path.join(postDir, filename)
     try {
       await downloadFile(url, fp)
-      console.log(`[download] Saved ${fp}`)
+      console.log(`[download] Saved image: ${fp}`)
     } catch (e) {
-      console.warn(`[download] Failed image ${url}:`, e)
+      console.warn(`[download] Failed to download image ${url}:`, e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -115,9 +179,9 @@ const savePostMediaFromHandle = async (
     const fp = path.join(postDir, filename)
     try {
       await downloadFile(url, fp)
-      console.log(`[download] Saved ${fp}`)
+      console.log(`[download] Saved video: ${fp}`)
     } catch (e) {
-      console.warn(`[download] Failed video ${url}:`, e)
+      console.warn(`[download] Failed to download video ${url}:`, e instanceof Error ? e.message : String(e))
     }
   }
 }
@@ -129,12 +193,17 @@ const dowloadContentAndImages = async (
   scopeSelector: string
 ) => {
   try {
+    console.log(`[download] Starting content download for directory: ${linkDirectory}`)
+    
     // Scope: contain all loaded posts inside this container (strict, no fallback)
     const SCOPE_SELECTOR = scopeSelector
-    const scope = await page.waitForSelector(SCOPE_SELECTOR, { timeout: 15000 })
+    console.log(`[download] Waiting for scope selector: ${SCOPE_SELECTOR}`)
+    
+    const scope = await page.waitForSelector(SCOPE_SELECTOR, { timeout: 30000 })
     if (!scope) {
       throw new Error(`Scope not found for selector: ${SCOPE_SELECTOR}`)
     }
+    console.log(`[download] Scope found, starting to process posts`)
 
     // Find all posts within scope
     const posts = await scope.$$('div[data-pressable-container="true"]')
@@ -149,8 +218,21 @@ const dowloadContentAndImages = async (
     let noNewPostsStreak = 0
     const MAX_NO_NEW_POSTS_STREAK = 3
 
-    const baseOutputDir = linkDirectory || path.join(process.cwd(), 'downloads')
-    await ensureDir(baseOutputDir)
+    // Sử dụng đường dẫn an toàn hơn - mặc định là Downloads/ThreadsDownloads
+    const defaultDir = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Downloads', 'ThreadsDownloads')
+    let baseOutputDir = linkDirectory || defaultDir
+    console.log(`[download] Using output directory: ${baseOutputDir}`)
+    
+    try {
+      await ensureDir(baseOutputDir)
+    } catch (dirError) {
+      console.error(`[download] Failed to create base directory ${baseOutputDir}:`, dirError)
+      // Fallback to user's Downloads folder
+      const userDownloads = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Downloads', 'ThreadsDownloads')
+      console.log(`[download] Falling back to user Downloads: ${userDownloads}`)
+      await ensureDir(userDownloads)
+      baseOutputDir = userDownloads
+    }
 
     while (true) {
       const hasUnprocessedPost = currentIndex < posts.length
@@ -162,15 +244,22 @@ const dowloadContentAndImages = async (
           console.log(`[feed] No post at index ${currentIndex}, skipping`)
           currentIndex++
         } else {
-          // Scroll post into view for natural behavior and lazy loading
-          await humanScrollToElement(page, currentPost)
+          try {
+            // Scroll post into view for natural behavior and lazy loading
+            await humanScrollToElement(page, currentPost)
 
-          // Save media for this post
-          await savePostMediaFromHandle(currentPost, baseOutputDir, currentIndex)
+            // Save media for this post
+            await savePostMediaFromHandle(currentPost, baseOutputDir, currentIndex)
+            console.log(`[feed] Successfully processed post ${currentIndex}`)
+          } catch (postError) {
+            console.error(`[feed] Failed to process post ${currentIndex}:`, postError instanceof Error ? postError.message : String(postError))
+            // Tiếp tục với post tiếp theo thay vì dừng
+          }
           currentIndex++
         }
       } else {
         // No unprocessed posts left; try to scroll further to trigger lazy loading
+        console.log(`[feed] No more posts to process, trying to load more...`)
         await humanScroll(page, 800)
       }
 
@@ -211,17 +300,16 @@ const buildThreadsProfileUrl = (accountName?: string) => {
 // Removed duplicate per-profile processing; using dowloadContentAndImages instead
 
 export async function run(page: Page, input: Input = {}) {
-  page.setDefaultTimeout(20000)
+  page.setDefaultTimeout(60000) // Tăng timeout lên 60 giây
   try {
-    console.log('Starting surfing threads and commenting...')
+    console.log('Starting download status and images...')
     
     console.log('📝 Raw Input:', input)
  
     // Build accounts list from provided object (no CSV/Excel reading here)
-    const accounts: AccountItem[] = normalizeAccountsFromInput(input)
-    const preview = accounts[0] ? { accountName: accounts[0].accountName, linkDirectory: accounts[0].linkDirectory } : { accountName: undefined, linkDirectory: undefined }
-    console.log('[input] normalized:', preview)
-
+    const { items } = buildNormalizedInput(input)
+    const accounts = items.filter(item => item.accountName)
+    
     if (accounts.length === 0) {
       console.warn('[run] No accounts provided in object input')
       return { success: false, message: 'No accounts provided' }
@@ -232,16 +320,31 @@ export async function run(page: Page, input: Input = {}) {
       const profileUrl = buildThreadsProfileUrl(row.accountName)
       const targetUrl = profileUrl ?? 'https://threads.com/'
       console.log(`[profile] Navigate: ${targetUrl}`)
-      await page.goto(targetUrl, { waitUntil: 'networkidle2' })
-      await humanDelay(1500, 2500)
-      await dowloadContentAndImages(page, row.linkDirectory, 'div.x1iorvi4:nth-child(2)')
-      await humanDelay(800, 1500)
+      
+      try {
+        // Thử navigation với timeout dài hơn và fallback options
+        await page.goto(targetUrl, { 
+          waitUntil: 'domcontentloaded', // Thay vì networkidle2
+          timeout: 60000 // 60 giây timeout
+        })
+        console.log(`[profile] Successfully navigated to: ${targetUrl}`)
+        
+        // Chờ thêm một chút để trang load hoàn toàn
+        await humanDelay(3000, 5000)
+        
+        await dowloadContentAndImages(page, row.linkDirectory, 'div.x1iorvi4:nth-child(2)')
+        await humanDelay(800, 1500)
+      } catch (navError) {
+        console.error(`[profile] Navigation failed for ${targetUrl}:`, navError)
+        // Tiếp tục với profile tiếp theo thay vì dừng hoàn toàn
+        continue
+      }
     }
 
     return { success: true, processed: accounts.length }
 
   } catch (error) {
-    console.error('Post and Comment automation failed:', error)
+    console.error('Download status and images failed:', error)
     // Rethrow so upstream IPC can catch and report properly
     throw error
   } finally {

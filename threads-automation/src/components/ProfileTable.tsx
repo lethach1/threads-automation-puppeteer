@@ -73,44 +73,67 @@ export default function ProfileTable({ onBack, settings, csvData, selectedScenar
       for (const p of profiles) {
         nameToId.set((p.displayName || p.name || '').trim(), p.id)
       }
-      // Group by profile name (flexible header matching)
-      const groups: Record<string, Array<Record<string, string>>> = {}
-      for (const row of csvData) {
-        // Try to find profile column with flexible matching
-        let profileName = ''
-        const rowKeys = Object.keys(row)
-        
-        // Look for profile column (case-insensitive)
-        const profileKey = rowKeys.find(key => key.toLowerCase() === 'profile')
-        if (profileKey) {
-          profileName = (row[profileKey] || '').toString().trim()
+      // Check if data has profile column
+      const hasProfileColumn = csvData.some(row => 
+        Object.keys(row).some(key => key.toLowerCase() === 'profile')
+      )
+      
+      if (hasProfileColumn) {
+        // Group by profile name (flexible header matching)
+        const groups: Record<string, Array<Record<string, string>>> = {}
+        for (const row of csvData) {
+          // Try to find profile column with flexible matching
+          let profileName = ''
+          const rowKeys = Object.keys(row)
+          
+          // Look for profile column (case-insensitive)
+          const profileKey = rowKeys.find(key => key.toLowerCase() === 'profile')
+          if (profileKey) {
+            profileName = (row[profileKey] || '').toString().trim()
+          }
+          
+          if (!profileName) continue
+          if (!groups[profileName]) groups[profileName] = []
+          groups[profileName].push(row)
         }
-        
-        if (!profileName) continue
-        if (!groups[profileName]) groups[profileName] = []
-        groups[profileName].push(row)
-      }
-      Object.entries(groups).forEach(([profileName, rows]) => {
-        const id = nameToId.get(profileName.trim())
-        if (!id) return
-        
-        // Get all available headers from the first row (excluding profile column)
-        const availableHeaders = rows.length > 0 ? Object.keys(rows[0]).filter(key => 
-          key.toLowerCase() !== 'profile'
-        ) : []
-        
-        const items = rows.map((r) => {
+        Object.entries(groups).forEach(([profileName, rows]) => {
+          const id = nameToId.get(profileName.trim())
+          if (!id) return
+          
+          // Get all available headers from the first row (excluding profile column)
+          const availableHeaders = rows.length > 0 ? Object.keys(rows[0]).filter(key => 
+            key.toLowerCase() !== 'profile'
+          ) : []
+          
+          const items = rows.map((r) => {
+            // Create dynamic object with all available columns
+            const dynamicData: any = {}
+            availableHeaders.forEach(header => {
+              dynamicData[header] = r[header] || ''
+            })
+            return dynamicData
+          })
+          
+          const first = items[0] || {}
+          map.set(id, { ...first, items })
+        })
+      } else {
+        // No profile column - distribute data to all profiles
+        console.log('[csv] No profile column found, distributing data to all profiles')
+        const items = csvData.map((r) => {
           // Create dynamic object with all available columns
           const dynamicData: any = {}
-          availableHeaders.forEach(header => {
+          Object.keys(r).forEach(header => {
             dynamicData[header] = r[header] || ''
           })
           return dynamicData
         })
         
-        const first = items[0] || {}
-        map.set(id, { ...first, items })
-      })
+        // Assign same data to all profiles
+        profiles.forEach(profile => {
+          map.set(profile.id, { items })
+        })
+      }
       setInputByProfileId(map)
       console.log('[csv] mapped inputs from config for profiles:', Array.from(map.keys()))
     } catch (err) {
