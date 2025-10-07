@@ -1,36 +1,119 @@
+import type { Page } from 'puppeteer-core'
+// @ts-ignore
+// (removed unused imports)
+
+// @ts-ignore
+import { 
+  humanDelay, 
+  humanTypeWithMistakes,
+} from '../human-behavior.js'
+
+
+
+type Input = {
+    profile?: string
+    username?: string
+    password?: string
+    
+    items?: Array<{ 
+      profile?: string
+      username?: string
+      password?: string  
+    }>
+  }
+  
+  type NormalizedInput = {
+    profile?: string
+    username?: string
+    password?: string
+  }
+  
+  // Pure helper function to normalize input data
+  const buildNormalizedInput = (input: Input) => {
+    // Normalize input keys with only case-insensitive and singular/plural variants
+    const normalizeRecord = (raw: Record<string, any> = {}): NormalizedInput => {
+      try {
+        const lowerMap: Record<string, any> = {}
+        for (const [k, v] of Object.entries(raw)) {
+          lowerMap[String(k).toLowerCase()] = v
+        }
+        const getByBase = (base: string) => {
+          const singular = base.toLowerCase()
+          const plural = `${singular}s`
+          const val = lowerMap[singular] ?? lowerMap[plural]
+          if (val == null) return undefined
+          const str = String(val).trim()
+          return str ? str : undefined
+        }
+        const profile = getByBase('Profile')
+        const username = getByBase('Username')
+        const password = getByBase('Password')
+        
+        return { 
+          profile, 
+          username, 
+          password,
+        }
+      } catch {
+        return { 
+          profile: undefined, 
+          username: undefined, 
+          password: undefined, 
+        }
+      }
+    }
+  
+    const normalizedInput = normalizeRecord(input as any)
+    const baseItems = Array.isArray(input.items) && input.items.length > 0 ? input.items as any[] : [input as any]
+    const items = baseItems.map((r) => ({ ...(r as any), ...normalizeRecord(r as any) }))
+  
+    return { normalizedInput, items }
+  }
 
 
 export async function run(page: Page, input: Input = {}) {
     page.setDefaultTimeout(20000)
     try {
-      console.log('Starting surfing threads and commenting...')
+      console.log('Starting login...')
       
       const { normalizedInput, items } = buildNormalizedInput(input)
       
       console.log('📝 Raw Input:', input)
       console.log('[input] profile:', normalizedInput.profile)
-      console.log('[input] feedsComment:', normalizedInput.feedsComment)
-      console.log('[input] searchKeyword:', normalizedInput.searchKeyword)
-      console.log('[input] topTabComment:', normalizedInput.topTabComment)
-      console.log('[input] recentTabComment:', normalizedInput.recentTabComment)
-      console.log('[input] commentPool count:', normalizedInput.commentPool?.length || 0)
-      console.log('[input] linkShopee:', normalizedInput.linkShopee)
-      console.log('[input] prompt:', normalizedInput.prompt)
-      console.log('[input] gptKey:', normalizedInput.gptKey)
+      console.log('[input] username:', normalizedInput.username)
+      // (do not log passwords)
       console.log('[input] items count:', items.length)   
   
-      //start script
-      // Step 1: Navigate to Threads
-      console.log('Step 1: Navigate to Threads')
-      await page.goto('https://threads.com/', { waitUntil: 'networkidle2' })
+      //start script (single attempt per session/profile)
+      const username = (normalizedInput.username || '').toString()
+      const password = (normalizedInput.password || '').toString()
+
+      if (!username) {
+        console.warn('[login] No username provided')
+        return { success: false, message: 'No username provided' }
+      }
+
+      // Navigate to login
+      await page.goto('https://www.threads.com/login', { waitUntil: 'networkidle2' })
       await humanDelay(2000, 4000)
-  
-     
+
+      // Clear inputs then type credentials
+      await page.click('input[autocomplete="username"]', { clickCount: 3 })
+      await page.keyboard.press('Backspace')
+      await humanTypeWithMistakes(page, 'input[autocomplete="username"]', username)
+
+      await page.click('input[autocomplete="current-password"]', { clickCount: 3 })
+      await page.keyboard.press('Backspace')
+      await humanTypeWithMistakes(page, 'input[autocomplete="current-password"]', password)
+      await humanDelay(800, 1200)
+
+      await page.keyboard.press('Enter')
+      await humanDelay(5000, 7000)
       
       return { success: true }
   
     } catch (error) {
-      console.error('Post and Comment automation failed:', error)
+      console.error('Login automation failed:', error)
       // Rethrow so upstream IPC can catch and report properly
       throw error
     } finally {
