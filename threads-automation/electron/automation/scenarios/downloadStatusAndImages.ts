@@ -117,9 +117,39 @@ const sanitize = (name: string) => name.replace(/[^a-z0-9-_]/gi, '_').slice(0, 8
 
 const extractMediaUrlsFromPost = async (postHandle: any) => {
   return await postHandle.evaluate((el: Element) => {
-    const imgUrls = Array.from(el.querySelectorAll('img'))
-      .map((img) => (img as HTMLImageElement).src)
-      .filter(Boolean)
+    // Chỉ lấy ảnh từ post content, bỏ qua avatar và các ảnh khác
+    // Tìm tất cả ảnh nhưng loại bỏ avatar (thường ở đầu post)
+    const allImgs = Array.from(el.querySelectorAll('img')) as HTMLImageElement[]
+    
+    // Bỏ qua ảnh avatar (thường là ảnh đầu tiên, nhỏ, và có class/attribute đặc biệt)
+    const contentImgs = allImgs.filter(img => {
+      const src = img.src
+      if (!src) return false
+      
+      // Bỏ qua ảnh có kích thước quá nhỏ (avatar thường < 100px)
+      if (img.width < 100 || img.height < 100) return false
+      
+      // Bỏ qua ảnh có URL chứa từ khóa avatar/profile
+      if (src.includes('profile') || src.includes('avatar') || src.includes('user') || src.includes('headshot')) {
+        return false
+      }
+      
+      // Bỏ qua ảnh có class/attribute đặc biệt của avatar
+      const parent = img.closest('div')
+      if (parent && (
+        parent.className.includes('avatar') || 
+        parent.className.includes('profile') ||
+        parent.getAttribute('data-testid')?.includes('avatar')
+      )) {
+        return false
+      }
+      
+      return true
+    })
+    
+    const imgUrls = contentImgs.map(img => img.src).filter(Boolean)
+    
+    // Lấy video từ post content
     const videoEls = Array.from(el.querySelectorAll('video')) as HTMLVideoElement[]
     const videoUrls: string[] = []
     for (const v of videoEls) {
@@ -127,13 +157,52 @@ const extractMediaUrlsFromPost = async (postHandle: any) => {
       const sources = Array.from(v.querySelectorAll('source')) as HTMLSourceElement[]
       for (const s of sources) if (s.src) videoUrls.push(s.src)
     }
+    
     return { imgUrls, videoUrls }
   })
 }
 
+// Extract cleaned status text from a post element
+const getStatusTextFromPost = async (postHandle: any): Promise<string> => {
+  try {
+    // Selector targeting post text container; keep minimal to avoid avatars/metadata
+    const statusSelector = 'div.x1a6qonq'
+    const statusElement = await postHandle.$(statusSelector)
+    if (!statusElement) return ''
+    const rawText: string = await statusElement.evaluate((el: Element) => (el.textContent || ''))
+    // Strip trailing "Translate" helper and trim
+    return rawText.replace(/\s*Translate\s*$/i, '').trim()
+  } catch {
+    return ''
+  }
+}
+
+// CSV helpers for statuses
+const ensureStatusesCsvHeader = async (csvPath: string) => {
+  try {
+    const stat = await fs.stat(csvPath).catch(() => null as any)
+    if (!stat || stat.size === 0) {
+      // Prepend UTF-8 BOM so Excel renders Vietnamese correctly; use CRLF line endings on Windows
+      await fs.writeFile(csvPath, '\uFEFFindex,status\r\n', { encoding: 'utf-8' })
+      console.log(`[csv] Initialized statuses CSV with header: ${csvPath}`)
+    }
+  } catch (e) {
+    console.error('[csv] Failed to ensure CSV header:', e instanceof Error ? e.message : String(e))
+  }
+}
+
+const appendStatusRow = async (csvPath: string, index: number, status: string) => {
+  try {
+    const escaped = '"' + status.replace(/"/g, '""') + '"'
+    await fs.appendFile(csvPath, `${index},${escaped}\r\n`, { encoding: 'utf-8' })
+  } catch (e) {
+    console.error('[csv] Failed to append status row:', e instanceof Error ? e.message : String(e))
+  }
+}
+
 const downloadFile = async (mediaUrl: string, filePath: string) => {
   try {
-    console.log(`[download] Starting download: ${mediaUrl} -> ${filePath}`)
+    console.log(`[download] Starting download:`)
     const res = await fetch(mediaUrl)
     if (!res.ok || !res.body) throw new Error(`Failed to download ${mediaUrl}: ${res.status}`)
     await pipeline(res.body as any, createWriteStream(filePath))
@@ -152,37 +221,41 @@ const savePostMediaFromHandle = async (
   const { imgUrls, videoUrls } = await extractMediaUrlsFromPost(postHandle)
   console.log(`[media] Found images=${imgUrls.length}, videos=${videoUrls.length} at index=${postIndex}`)
 
-  const folderName = `post_${String(postIndex).padStart(4, '0')}`
-  const postDir = path.join(baseOutputDir, sanitize(folderName))
-  
-  // Ensure both base directory and post directory exist
+  // Nếu không có media nào, bỏ qua post này
+  if (imgUrls.length === 0 && videoUrls.length === 0) {
+    console.log(`[media] No media found for post ${postIndex}, skipping...`)
+    return
+  }
+
+  // Chỉ cần đảm bảo base directory tồn tại, không tạo folder riêng cho post
   await ensureDir(baseOutputDir)
-  await ensureDir(postDir)
 
   let mediaIndex = 0
   for (const url of imgUrls) {
     const ext = getFileExtensionFromUrl(url, '.jpg')
-    const filename = `image_${String(mediaIndex++).padStart(3, '0')}${ext}`
-    const fp = path.join(postDir, filename)
+    const filename = `post_${String(postIndex + 1).padStart(3, '0')}_image_${String(mediaIndex + 1).padStart(2, '0')}${ext}`
+    const fp = path.join(baseOutputDir, filename)
     try {
       await downloadFile(url, fp)
       console.log(`[download] Saved image: ${fp}`)
     } catch (e) {
       console.warn(`[download] Failed to download image ${url}:`, e instanceof Error ? e.message : String(e))
     }
+    mediaIndex++
   }
 
   mediaIndex = 0
   for (const url of videoUrls) {
     const ext = getFileExtensionFromUrl(url, '.mp4')
-    const filename = `video_${String(mediaIndex++).padStart(3, '0')}${ext}`
-    const fp = path.join(postDir, filename)
+    const filename = `post_${String(postIndex + 1).padStart(3, '0')}_video_${String(mediaIndex + 1).padStart(2, '0')}${ext}`
+    const fp = path.join(baseOutputDir, filename)
     try {
       await downloadFile(url, fp)
       console.log(`[download] Saved video: ${fp}`)
     } catch (e) {
       console.warn(`[download] Failed to download video ${url}:`, e instanceof Error ? e.message : String(e))
     }
+    mediaIndex++
   }
 }
 
@@ -190,7 +263,8 @@ const savePostMediaFromHandle = async (
 const dowloadContentAndImages = async (
   page: Page,
   linkDirectory: string | undefined,
-  scopeSelector: string
+  scopeSelector: string,
+  accountFolderName?: string
 ) => {
   try {
     console.log(`[download] Starting content download for directory: ${linkDirectory}`)
@@ -227,12 +301,18 @@ const dowloadContentAndImages = async (
       await ensureDir(baseOutputDir)
     } catch (dirError) {
       console.error(`[download] Failed to create base directory ${baseOutputDir}:`, dirError)
-      // Fallback to user's Downloads folder
+      // Fallback to user's Downloads folder with account subfolder
       const userDownloads = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Downloads', 'ThreadsDownloads')
-      console.log(`[download] Falling back to user Downloads: ${userDownloads}`)
-      await ensureDir(userDownloads)
-      baseOutputDir = userDownloads
+      const subfolder = sanitize(accountFolderName || 'account')
+      const fallbackDir = path.join(userDownloads, subfolder)
+      console.log(`[download] Falling back to: ${fallbackDir}`)
+      await ensureDir(fallbackDir)
+      baseOutputDir = fallbackDir
     }
+
+    // Prepare CSV path and header (write-as-you-go)
+    const csvPath = path.join(baseOutputDir, 'statuses.csv')
+    await ensureStatusesCsvHeader(csvPath)
 
     while (true) {
       const hasUnprocessedPost = currentIndex < posts.length
@@ -247,6 +327,13 @@ const dowloadContentAndImages = async (
           try {
             // Scroll post into view for natural behavior and lazy loading
             await humanScrollToElement(page, currentPost)
+            const statusText = await getStatusTextFromPost(currentPost)
+            if (statusText) {
+              console.log(`[feed] Status text: "${statusText.slice(0, 100)}..." (len=${statusText.length})`)
+              await appendStatusRow(csvPath, currentIndex + 1, statusText)
+            } else {
+              console.log('[feed] No status text extracted for this post')
+            }
 
             // Save media for this post
             await savePostMediaFromHandle(currentPost, baseOutputDir, currentIndex)
@@ -282,6 +369,8 @@ const dowloadContentAndImages = async (
         break
       }
     }
+
+    // No batch write; rows already appended incrementally
 
   } catch (error) {
     console.error('Failed while per-post scrolling/clicking:', error)
@@ -332,7 +421,11 @@ export async function run(page: Page, input: Input = {}) {
         // Chờ thêm một chút để trang load hoàn toàn
         await humanDelay(3000, 5000)
         
-        await dowloadContentAndImages(page, row.linkDirectory, 'div.x1iorvi4:nth-child(2)')
+        // Tạo folder riêng cho mỗi account
+        const accountFolderName = sanitize(row.accountName || `account_${i + 1}`)
+        const accountDir = row.linkDirectory || path.join(process.env.USERPROFILE || process.env.HOME || '', 'Downloads', 'ThreadsDownloads', accountFolderName)
+        
+        await dowloadContentAndImages(page, accountDir, 'div.x1iorvi4:nth-child(2)', accountFolderName)
         await humanDelay(800, 1500)
       } catch (navError) {
         console.error(`[profile] Navigation failed for ${targetUrl}:`, navError)
