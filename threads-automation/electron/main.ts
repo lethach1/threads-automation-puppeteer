@@ -361,59 +361,55 @@ ipcMain.handle('upload-custom-script', async (_event, { fileName, content }) => 
       return { success: false, error: 'Script content cannot be empty' }
     }
 
-    // Create complete script by merging template with user logic
-    // Use dynamic import for ESM helper
-    const SCRIPT_TEMPLATE = `const fs = require('fs')
-const path = require('path')
+    // Normalize scenario id and output path
+    const rawName = path.basename(String(fileName || 'custom-script'))
+    const scenarioId = rawName.replace(/\.(ts|js|cjs)$/i, '').replace(/\s+/g, '-').toLowerCase()
+    const scriptPath = path.join(CUSTOM_SCRIPTS_DIR, `${scenarioId}.cjs`)
 
-async function run(page, input = {}) {
-  try {
-    console.log('🚀 Starting custom automation...')
-    console.log('📝 Input:', input)
-    const { humanDelay, humanClick, humanTypeWithMistakes, waitForElements } = await import('../automation/human-behavior.js')
-    
-    // USER_LOGIC_PLACEHOLDER
-    
-    console.log('✅ Custom automation completed successfully!')
-    return { success: true }
-    
-  } catch (error) {
-    console.error('❌ Custom automation failed:', error)
-    return { success: false, error: error.message }
-  }
-}
+    let code = String(content).trim()
+    if (!code) return { success: false, error: 'Script content cannot be empty' }
 
-module.exports = { run }`
-
-    // Replace placeholder with user logic
-    const completeScript = SCRIPT_TEMPLATE.replace('// USER_LOGIC_PLACEHOLDER', content.trim())
-
-    // Save script (always save as .cjs file to avoid ES module issues)
-    // Ensure fileName is just the name, not a full path
-    const cleanFileName = path.basename(fileName).replace(/\.(ts|js)$/, '')
-    const scriptPath = path.join(CUSTOM_SCRIPTS_DIR, `${cleanFileName}.cjs`)
-    console.log(`[scripts] Saving script to: ${scriptPath}`)
-    console.log(`[scripts] Directory exists: ${fs.existsSync(CUSTOM_SCRIPTS_DIR)}`)
-    console.log(`[scripts] Original fileName: ${fileName}`)
-    console.log(`[scripts] Clean fileName: ${cleanFileName}`)
-    await promisify(fs.writeFile)(scriptPath, completeScript, 'utf8')
-    console.log(`[scripts] Script saved successfully: ${scriptPath}`)
-
-    // Validate script syntax by trying to compile
+    // Try to transpile to CJS regardless of extension (handles TS/ESM syntax in uploads)
     try {
-      // Basic TypeScript validation
-      const scriptName = cleanFileName.replace(/[^a-zA-Z0-9_-]/g, '_')
-      return { 
-        success: true, 
-        scriptName,
-        scriptPath,
-        message: 'Custom script uploaded successfully' 
+      // Prefer TypeScript transpilation if available
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const ts = require('typescript')
+      const res = ts.transpileModule(code, {
+        compilerOptions: {
+          module: (ts as any).ModuleKind?.CommonJS ?? 1,
+          target: (ts as any).ScriptTarget?.ES2020 ?? 7,
+          removeComments: true,
+        }
+      })
+      code = String(res.outputText || code).trim()
+    } catch (e1) {
+      try {
+        // Fallback to esbuild if available
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const esbuild = require('esbuild')
+        // Try TS loader first; if it fails, try JS loader to strip ESM
+        let transformed = esbuild.transformSync(code, {
+          loader: 'ts',
+          format: 'cjs',
+          platform: 'node',
+          target: 'es2020',
+        })
+        code = String(transformed.code || code).trim()
+      } catch (e2) {
+        // If neither transpiler is available, keep code as-is (assume user provided CJS)
       }
-    } catch (validationError) {
-      // Remove invalid script
-      fs.unlinkSync(scriptPath)
-      return { success: false, error: `Script validation failed: ${validationError}` }
     }
+
+    // Ensure CJS export if user used ESM export
+    if (!/module\.exports\s*=\s*\{\s*run\s*:?\s*run?\s*\}/.test(code)) {
+      if (/export\s+async\s+function\s+run|export\s+\{\s*run\s*\}/.test(code)) {
+        code += "\n\nmodule.exports = { run }\n"
+      }
+    }
+
+    await promisify(fs.writeFile)(scriptPath, code, 'utf8')
+    console.log(`[scripts] Script saved: ${scriptPath}`)
+    return { success: true, id: scenarioId, scriptPath }
   } catch (error: any) {
     console.error('[scripts] Error uploading script:', error)
     console.error('[scripts] Error details:', {

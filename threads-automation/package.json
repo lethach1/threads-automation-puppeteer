@@ -30,6 +30,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "esbuild": "^0.25.10",
     "lucide-react": "^0.543.0",
     "openai": "^6.1.0",
     "puppeteer-core": "^24.17.1",
@@ -56,7 +57,7 @@
     "eslint-plugin-react-refresh": "^0.4.5",
     "tailwindcss-animate": "^1.0.7",
     "tw-animate-css": "^1.3.8",
-    "typescript": "^5.2.2",
+    "typescript": "^5.9.3",
     "vite": "^5.1.6",
     "vite-plugin-electron": "^0.28.6",
     "vite-plugin-electron-renderer": "^0.14.5"

@@ -279,38 +279,7 @@ export default function AutomationConfig({ onContinue }: Props) {
     }
   }
 
-  // Get script template (user logic only)
-  const getScriptTemplate = () => {
-    return `// Custom Automation Logic
-// Just write your automation steps here - all functions are imported automatically
-
-// Example: Navigate to a website
-await page.goto('https://example.com', { waitUntil: 'networkidle2' })
-await humanDelay(2000, 4000)
-
-// Example: Click on an element
-await waitForElements(page, 'button')
-await humanClick(page, 'button')
-
-// Example: Type text
-await humanTypeWithMistakes(page, 'input', input.text || 'Hello World')
-
-// Example: Use file system
-if (fs.existsSync(input.filePath)) {
-  console.log('File exists:', input.filePath)
-}
-
-// Available functions (imported automatically):
-// - humanDelay(min, max): Random delay between min and max milliseconds
-// - humanClick(page, selector): Human-like click with random delay
-// - humanTypeWithMistakes(page, selector, text): Type text with human-like mistakes
-// - waitForElements(page, selector): Wait for elements to appear
-// - console.log(): For debugging
-
-// Available modules (imported automatically):
-// - fs: File system operations (existsSync, readFileSync, etc.)
-// - path: Path utilities (join, dirname, etc.)`
-  }
+  // Removed script template helper per user request
 
   // Validate script content (user logic only)
   const validateScript = (content: string) => {
@@ -814,14 +783,6 @@ if (fs.existsSync(input.filePath)) {
                  <div className="space-y-2 flex-1 flex flex-col">
                    <div className="flex items-center justify-between">
                      <Label htmlFor="script-content">Automation Logic</Label>
-                     <Button
-                       type="button"
-                       variant="outline"
-                       size="sm"
-                       onClick={() => setScriptContent(getScriptTemplate())}
-                     >
-                       Use Template
-                     </Button>
                    </div>
                    <textarea
                      id="script-content"
