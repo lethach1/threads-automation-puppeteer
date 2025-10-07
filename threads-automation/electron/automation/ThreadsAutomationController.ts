@@ -53,17 +53,14 @@ export const runAutomationOnPage = async (
   page: Page,
   opts?: { scenario?: string; input?: any }
 ): Promise<ScenarioResult> => {
-  const scenario = (opts?.scenario || 'openHomepage').trim()
+  const scenario = String(opts?.scenario || '').trim()
 
   try {
-    switch (scenario) {
-      case 'openHomepage': {
-        await page.goto('https://threads.com/', { waitUntil: 'networkidle2' })
-        return { success: true }
-      }
-      default: {
-        // Try to load from custom scripts first, then built-in scenarios
-        console.log('[router] resolving scenario:', scenario)
+    if (!scenario) {
+      throw new Error('scenario is required')
+    }
+    // Try to load from custom scripts first, then built-in scenarios
+    console.log('[router] resolving scenario:', scenario)
         
         // First try custom scripts (template format)
         try {
@@ -109,8 +106,8 @@ export const runAutomationOnPage = async (
         console.log('[router] built-in scenario module loaded:', mappedScenario)
         const result: ScenarioResult = await mod.run(page, opts?.input)
         return result ?? { success: true }
-      }
-    }
+    
+    // (rest of function unchanged)
   } catch (error: any) {
     console.error('[router] scenario error:', error)
     return { success: false, error: error?.message || 'Scenario error' }

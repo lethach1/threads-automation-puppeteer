@@ -13,9 +13,6 @@ import { type CsvRow } from '@/utils/csvReader'
 
 type Props = { 
   onContinue?: (config: {
-    windowWidth: number
-    windowHeight: number
-    scalePercent: number
     numThreads: number
     csvData?: CsvRow[]
     selectedScenario?: string
@@ -41,9 +38,6 @@ export default function AutomationConfig({ onContinue }: Props) {
       useInputExcel: true,
       filePath: '',
       numThreads: 5,
-      windowWidth: 800,
-      windowHeight: 600,
-      scalePercent: 100,
       schedules: [] as ScheduleItem[],
       csvData: [] as CsvRow[]
     },
@@ -51,9 +45,6 @@ export default function AutomationConfig({ onContinue }: Props) {
       useInputExcel: true,
       filePath: '',
       numThreads: 5,
-      windowWidth: 800,
-      windowHeight: 600,
-      scalePercent: 100,
       schedules: [] as ScheduleItem[],
       csvData: [] as CsvRow[]
     },
@@ -61,9 +52,6 @@ export default function AutomationConfig({ onContinue }: Props) {
       useInputExcel: true,
       filePath: '',
       numThreads: '5',
-      windowWidth: '800',
-      windowHeight: '600',
-      scalePercent: '100',
       schedules: [] as ScheduleItem[],
       csvData: [] as CsvRow[]
     }
@@ -173,7 +161,7 @@ export default function AutomationConfig({ onContinue }: Props) {
   const tabItems = [
     { id: 'input-from-application', label: 'Input from application', icon: '📝' },
     { id: 'run-configuration', label: 'Run Configuration', icon: '⚙️' },
-    { id: 'schedule', label: 'Schedule', icon: '📅' }
+    // { id: 'schedule', label: 'Schedule', icon: '📅' } // temporarily hidden
   ]
 
   // Available automation scripts (built-in + custom)
@@ -580,57 +568,11 @@ export default function AutomationConfig({ onContinue }: Props) {
                          className="w-20 h-8 text-sm"
                        />
                     </div>
-
-                    {/* Window Size */}
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Label className="text-sm font-medium">Window</Label>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Input
-                          id="window-width"
-                          type="text"
-                          inputMode="numeric"
-                          value={currentScenario.windowWidth}
-                          onChange={(e) => updateScenario('windowWidth', e.target.value)}
-                          aria-label="Window width"
-                          className="w-20 h-8 text-sm"
-                        />
-                        <span className="text-muted-foreground select-none">x</span>
-                        <Input
-                          id="window-height"
-                          type="text"
-                          inputMode="numeric"
-                          value={currentScenario.windowHeight}
-                          onChange={(e) => updateScenario('windowHeight', e.target.value)}
-                          aria-label="Window height"
-                          className="w-20 h-8 text-sm"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Scale (%) */}
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor="scale-percent" className="text-sm font-medium">Scale (%)</Label>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <Input
-                        id="scale-percent"
-                        type="text"
-                        inputMode="numeric"
-                        value={currentScenario.scalePercent}
-                        onChange={(e) => updateScenario('scalePercent', e.target.value)}
-                        aria-label="Scale percentage"
-                        className="w-20 h-8 text-sm"
-                      />
-                    </div>
                   </div>
                 </section>
             )}
 
-            {activeTab === 'schedule' && (
+            {/* {activeTab === 'schedule' && (
                 <section aria-labelledby="schedule-heading" className="space-y-4">
                   <h2 id="schedule-heading" className="text-2xl font-semibold">Schedule Configuration</h2>
 
@@ -700,7 +642,7 @@ export default function AutomationConfig({ onContinue }: Props) {
                     </div>
                   )}
                  </section>
-            )}
+            )} */}
 
              {/* Continue Button */}
              <div className="flex justify-end mt-8">
@@ -719,14 +661,8 @@ export default function AutomationConfig({ onContinue }: Props) {
                      const n = parseInt(s.replace(/\D+/g, ''), 10)
                      return Number.isFinite(n) ? n : fallback
                    }
-                   const width = toInt(currentScenario.windowWidth, 800)
-                   const height = toInt(currentScenario.windowHeight, 600)
-                   const scale = toInt(currentScenario.scalePercent, 100)
                    const threads = toInt(currentScenario.numThreads, 5)
                   const config = {
-                     windowWidth: Math.max(100, width),
-                     windowHeight: Math.max(100, height),
-                     scalePercent: Math.min(200, Math.max(10, scale)),
                      numThreads: Math.max(1, threads),
                      csvData: currentScenario.csvData,
                     selectedScenario: selectedScript
