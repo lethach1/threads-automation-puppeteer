@@ -4,9 +4,9 @@ import ProfileTable from './components/ProfileTable'
 import './App.css'
 
 type AutomationSettings = {
-  windowWidth: number
-  windowHeight: number
-  scalePercent: number
+  // windowWidth: number  // Không cần sử dụng
+  // windowHeight: number // Không cần sử dụng  
+  // scalePercent: number // Không cần sử dụng
   numThreads: number
   csvData?: Array<Record<string, string>>
   selectedScenario?: string
@@ -15,9 +15,9 @@ type AutomationSettings = {
 function App() {
   const [view, setView] = useState<'config' | 'profiles'>('config')
   const [settings, setSettings] = useState<AutomationSettings>({
-    windowWidth: 800,
-    windowHeight: 600,
-    scalePercent: 100,
+    // windowWidth: 800,    // Không cần sử dụng
+    // windowHeight: 600,   // Không cần sử dụng
+    // scalePercent: 100,   // Không cần sử dụng
     numThreads: 5
   })
 
@@ -37,6 +37,12 @@ function App() {
   return (
     <div className="min-h-screen bg-background">
       <AutomationConfig 
+        // Truyền session data xuống để restore lại state
+        initialSettings={{
+          numThreads: settings.numThreads,
+          csvData: settings.csvData,
+          selectedScenario: settings.selectedScenario
+        }}
         onContinue={(config) => {
           setSettings(config as any)
           setView('profiles')

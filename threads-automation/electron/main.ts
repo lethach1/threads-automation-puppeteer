@@ -18,12 +18,12 @@ process.env.WS_NO_BUFFER_UTIL = '1'
 process.env.WS_NO_UTF_8_VALIDATE = '1'
 
 // Enable Chromium/Electron logging to the console window (Windows debug builds)
-app?.commandLine?.appendSwitch?.('enable-logging')
+// app?.commandLine?.appendSwitch?.('enable-logging')  // Tắt verbose logging
 
 // Enable debug mode if DEBUG environment variable is set
 if (process.env.DEBUG === 'true') {
   app?.commandLine?.appendSwitch?.('remote-debugging-port', '9222')
-  app?.commandLine?.appendSwitch?.('enable-logging')
+  // app?.commandLine?.appendSwitch?.('enable-logging')  // Tắt verbose logging
   console.log('🐛 Debug mode enabled - DevTools available at http://localhost:9222')
 }
 
@@ -53,7 +53,7 @@ function createWindow() {
     height: 900,
     minWidth: 1000,
     minHeight: 700,
-    icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+    icon: path.join(process.env.APP_ROOT, 'src/assets/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
     },
@@ -230,7 +230,7 @@ ipcMain.handle('parse-csv', async (_event, filePath: string) => {
 ipcMain.handle('run-open-profiles', async (_event, payload) => {
   try {
     console.log('[ipc] run-open-profiles called with', payload)
-    const { profileIds, windowWidth, windowHeight, scalePercent, concurrency } = payload
+    const { profileIds } = payload
 
     if (!Array.isArray(profileIds) || profileIds.length === 0) {
       return {
@@ -239,14 +239,14 @@ ipcMain.handle('run-open-profiles', async (_event, payload) => {
       }
     }
 
-    const options: OpenProfileOptions = {
-      windowWidth: Number(windowWidth) || 800,
-      windowHeight: Number(windowHeight) || 600,
-      scalePercent: Number(scalePercent) || 100
-    }
+    // const options: OpenProfileOptions = {
+    //   windowWidth: 800,    // Sử dụng default values
+    //   windowHeight: 600,   // Sử dụng default values
+    //   scalePercent: 100    // Sử dụng default values
+    // }
     
-    const concurrencyLimit = Math.max(1, Math.floor(Number(concurrency) || 1))
-    const opened = await openProfilesWithConcurrency(profileIds, options, concurrencyLimit)
+    // Không cần concurrency limit vì đã xử lý ở frontend
+    const opened = await openProfilesWithConcurrency(profileIds, profileIds.length)
     console.log('[ipc] run-open-profiles opened:', opened)
     return { success: true, opened }
   } catch (error: any) {

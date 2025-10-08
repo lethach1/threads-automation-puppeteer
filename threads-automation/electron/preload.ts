@@ -71,10 +71,9 @@ contextBridge.exposeInMainWorld('api', {
 contextBridge.exposeInMainWorld('automationApi', {
   runOpenProfiles: async (payload: {
     profileIds: string[]
-    windowWidth?: number
-    windowHeight?: number
-    scalePercent?: number
-    concurrency?: number
+    // windowWidth?: number  // Không cần sử dụng
+    // windowHeight?: number // Không cần sử dụng
+    // scalePercent?: number // Không cần sử dụng
   }) => {
     try {
       return await ipcRenderer.invoke('run-open-profiles', payload)

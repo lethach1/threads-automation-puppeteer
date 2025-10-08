@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { ArrowUpDown, FolderOpen } from 'lucide-react'
+import { ArrowUpDown, FolderOpen, RefreshCw } from 'lucide-react'
 import { getListProfiles } from '@/services/profileApi'
 // getRowValue no longer needed with flexible headers
 // CSV is now provided by config screen; no direct CSV parsing here
@@ -19,9 +19,9 @@ type Profile = {
 type Props = {
   onBack?: () => void
   settings?: {
-    windowWidth: number
-    windowHeight: number
-    scalePercent: number
+    // windowWidth: number  // Không cần sử dụng
+    // windowHeight: number // Không cần sử dụng
+    // scalePercent: number // Không cần sử dụng
     numThreads: number
   }
   csvData?: Array<Record<string, string>>
@@ -183,60 +183,108 @@ export default function ProfileTable({ onBack, settings, csvData, selectedScenar
         return
       }
 
-      // Use settings from AutomationConfig or fallback to defaults
-      const payload = {
-        profileIds: selectedProfileIds,
-        windowWidth: settings?.windowWidth || 800,
-        windowHeight: settings?.windowHeight || 600,
-        scalePercent: settings?.scalePercent || 100,
-        concurrency: Math.min(settings?.numThreads || 3, selectedProfileIds.length)
+      const concurrency = settings?.numThreads || 3
+      console.log(`🚀 Starting batch processing: ${selectedProfileIds.length} profiles with concurrency ${concurrency}`)
+
+      // Chia profiles thành batches
+      const batches: string[][] = []
+      for (let i = 0; i < selectedProfileIds.length; i += concurrency) {
+        batches.push(selectedProfileIds.slice(i, i + concurrency))
       }
 
-      const result = await window.automationApi.runOpenProfiles(payload)
-      console.log('Run selected result:', result)
-      
-      if (result.success) {
-        const openedIds: string[] = Array.isArray(result.opened)
-          ? result.opened
-              .map((v: any) => (typeof v === 'string' ? v : (v?.profileId || v?.id)))
-              .filter((v: any) => typeof v === 'string' && v.length > 0)
-          : []
-        console.log(`Successfully opened ${openedIds.length} profiles`)
-        if (openedIds.length === 0) {
-          console.error('No profiles opened; aborting automation run.')
-          return
-        }
+      console.log(`📦 Created ${batches.length} batches:`, batches.map(batch => `[${batch.join(', ')}]`))
 
-        // Trigger automation only for profiles that actually opened
-        for (const profileId of openedIds) {
-          try {
-            const input = inputByProfileId.get(profileId) || {}
-            const autoRes = await window.automationApi.runAutomationForProfile({
-              profileId,
-              scenario: selectedScenario || 'postAndComment',
-              input
-            })
-            if (!autoRes?.success) {
-              console.error('Automation failed for profile', profileId, autoRes?.error)
-            } else {
-              console.log('Automation started for profile', profileId)
-              // Mark completion when automation signals success
-              setCompletedProfiles((prev) => {
-                const next = new Set(prev)
-                next.add(profileId)
-                return next
-              })
-              setProfiles((prev) => prev.map(p => p.id === profileId ? { ...p, isCompleted: true } : p))
-            }
-          } catch (e) {
-            console.error('Automation error for profile', profileId, e)
+      // Xử lý từng batch
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex]
+        console.log(`Processing batch ${batchIndex + 1}/${batches.length}: [${batch.join(', ')}]`)
+
+        try {
+          // Bước 1: Mở profiles trong batch này
+          const openPayload = { profileIds: batch }
+          const openResult = await window.automationApi.runOpenProfiles(openPayload)
+          console.log(`Batch ${batchIndex + 1} open result:`, openResult)
+
+          if (!openResult.success) {
+            console.error(`❌ Failed to open batch ${batchIndex + 1}:`, openResult.error)
+            continue // Bỏ qua batch này, chuyển sang batch tiếp theo
           }
+
+          const openedIds: string[] = Array.isArray(openResult.opened)
+            ? openResult.opened
+                .map((v: any) => (typeof v === 'string' ? v : (v?.profileId || v?.id)))
+                .filter((v: any) => typeof v === 'string' && v.length > 0)
+            : []
+
+          console.log(`✅ Successfully opened ${openedIds.length} profiles in batch ${batchIndex + 1}`)
+
+          // Bước 2: Chạy automation cho tất cả profiles trong batch
+          const automationPromises = openedIds.map(async (profileId) => {
+            try {
+              const input = inputByProfileId.get(profileId) || {}
+              console.log(`🎯 Running automation for profile: ${profileId}`)
+              
+              const autoRes = await window.automationApi.runAutomationForProfile({
+                profileId,
+                scenario: selectedScenario || 'postAndComment',
+                input
+              })
+
+              if (!autoRes?.success) {
+                console.error(`❌ Automation failed for profile ${profileId}:`, autoRes?.error)
+                return { profileId, success: false, error: autoRes?.error }
+              } else {
+                console.log(`✅ Automation completed for profile: ${profileId}`)
+                return { profileId, success: true }
+              }
+            } catch (e) {
+              console.error(`❌ Automation error for profile ${profileId}:`, e)
+              return { profileId, success: false, error: e }
+            }
+          })
+
+          // Chờ tất cả automation trong batch hoàn thành
+          const batchResults = await Promise.all(automationPromises)
+          const successfulProfiles = batchResults.filter(r => r.success).map(r => r.profileId)
+
+          // Cập nhật UI cho profiles thành công
+          successfulProfiles.forEach(profileId => {
+            setCompletedProfiles((prev) => {
+              const next = new Set(prev)
+              next.add(profileId)
+              return next
+            })
+            setProfiles((prev) => prev.map(p => p.id === profileId ? { ...p, isCompleted: true } : p))
+          })
+
+          console.log(`✅ Batch ${batchIndex + 1} completed: ${successfulProfiles.length}/${openedIds.length} profiles successful`)
+
+          // Bước 3: Đóng tất cả profiles trong batch này
+          console.log(`🔒 Closing profiles in batch ${batchIndex + 1}...`)
+          const closePromises = openedIds.map(profileId => 
+            window.automationApi.closeProfile(profileId).catch(err => 
+              console.warn(`Warning: Failed to close profile ${profileId}:`, err)
+            )
+          )
+          await Promise.all(closePromises)
+          console.log(`✅ Batch ${batchIndex + 1} profiles closed`)
+
+        } catch (batchError) {
+          console.error(`❌ Batch ${batchIndex + 1} failed:`, batchError)
+          // Tiếp tục với batch tiếp theo thay vì dừng hoàn toàn
         }
-      } else {
-        console.error('Failed to open profiles:', result.error)
+
+        // Thêm delay giữa các batches để tránh overload
+        if (batchIndex < batches.length - 1) {
+          console.log('⏳ Waiting 2 seconds before next batch...')
+          await new Promise(resolve => setTimeout(resolve, 2000))
+        }
       }
+
+      console.log('🎉 All batches completed!')
+
     } catch (err) {
-      console.error('Run selected: error', err)
+      console.error('❌ Run selected: error', err)
     }
   }
   const startInlineEdit = (p: Profile) => {
@@ -271,6 +319,7 @@ export default function ProfileTable({ onBack, settings, csvData, selectedScenar
             disabled={isLoading}
             title="Reload profiles"
           >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             {isLoading ? 'Reloading...' : 'Reload'}
           </Button>
           {selectedProfiles.size > 0 && (

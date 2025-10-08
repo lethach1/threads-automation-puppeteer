@@ -5,13 +5,19 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 // Tabs components no longer needed - using sidebar instead
-import { HelpCircle, Plus, Trash2, Copy, Upload } from 'lucide-react'
+import { HelpCircle, Plus, Trash2, Copy, Upload, FileText, Settings } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import DatePickerAndTimePickerDemo, { type DateTimeValue } from '@/components/ui/datetime-picker'
 import { type CsvRow } from '@/utils/csvReader'
 
 type Props = { 
+  // Truyền session data để restore state
+  initialSettings?: {
+    numThreads?: number
+    csvData?: CsvRow[]
+    selectedScenario?: string
+  }
   onContinue?: (config: {
     numThreads: number
     csvData?: CsvRow[]
@@ -19,7 +25,7 @@ type Props = {
   }) => void 
 }
 
-export default function AutomationConfig({ onContinue }: Props) {
+export default function AutomationConfig({ initialSettings, onContinue }: Props) {
   const [activeTab, setActiveTab] = useState('input-from-application')
   const [viewAsObject, setViewAsObject] = useState(false) // Toggle between table and object view
   const [selectedScript, setSelectedScript] = useState('')
@@ -61,6 +67,28 @@ export default function AutomationConfig({ onContinue }: Props) {
   
   // Get current scenario data - using postAndComment as default since we removed scenario selection
   const currentScenario = scenarios['postAndComment']
+
+  // Restore state từ session data khi component mount
+  useEffect(() => {
+    if (initialSettings) {
+      console.log('🔄 Restoring session data:', initialSettings)
+      
+      // Restore selected script
+      if (initialSettings.selectedScenario) {
+        setSelectedScript(initialSettings.selectedScenario)
+      }
+      
+      // Restore CSV data và numThreads
+      setScenarios(prev => ({
+        ...prev,
+        'postAndComment': {
+          ...prev['postAndComment'],
+          csvData: initialSettings.csvData || prev['postAndComment'].csvData,
+          numThreads: initialSettings.numThreads || prev['postAndComment'].numThreads
+        }
+      }))
+    }
+  }, [initialSettings]) // Chạy khi initialSettings thay đổi
 
   // Helper function to update scenario data
   const updateScenario = (key: string, value: any) => {
@@ -159,8 +187,8 @@ export default function AutomationConfig({ onContinue }: Props) {
   }
 
   const tabItems = [
-    { id: 'input-from-application', label: 'Input from application', icon: '📝' },
-    { id: 'run-configuration', label: 'Run Configuration', icon: '⚙️' },
+    { id: 'input-from-application', label: 'Input from application', icon: FileText },
+    { id: 'run-configuration', label: 'Run Configuration', icon: Settings },
     // { id: 'schedule', label: 'Schedule', icon: '📅' } // temporarily hidden
   ]
 
@@ -314,20 +342,23 @@ export default function AutomationConfig({ onContinue }: Props) {
           <div className="p-6">
             <h1 className="text-2xl font-bold text-blue-600 mb-8">Automation Configuration</h1>
             <nav className="space-y-2">
-              {tabItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-left rounded-lg transition-colors ${
-                    activeTab === item.id
-                      ? 'bg-primary text-primary-foreground'
-                      : 'hover:bg-muted text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <span className="text-lg">{item.icon}</span>
-                  <span className="font-medium">{item.label}</span>
-                </button>
-              ))}
+              {tabItems.map((item) => {
+                const IconComponent = item.icon
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left rounded-lg transition-colors cursor-pointer ${
+                      activeTab === item.id
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <IconComponent className="h-5 w-5" />
+                    <span className="font-medium">{item.label}</span>
+                  </button>
+                )
+              })}
             </nav>
           </div>
         </div>

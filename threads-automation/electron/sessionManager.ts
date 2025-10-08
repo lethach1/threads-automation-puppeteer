@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 
-type OpenProfileOptions = { windowWidth: number; windowHeight: number; scalePercent: number }
+// type OpenProfileOptions = { windowWidth: number; windowHeight: number; scalePercent: number }
 type SessionInfo = { wsUrl: string; browser: import('puppeteer-core').Browser }
 
 const require = createRequire(import.meta.url)
@@ -13,11 +13,12 @@ process.env.WS_NO_UTF_8_VALIDATE = '1'
 const OPEN_PROFILE_API = 'http://127.0.0.1:5424/api/open-profile'
 const sessions = new Map<string, SessionInfo>()
 
-export async function openOneProfileAndConnect(profileId: string, options: OpenProfileOptions) {
+export async function openOneProfileAndConnect(profileId: string) {
+  // Không gửi options xuống Profile Manager, để nó sử dụng default settings
   const res = await fetch(OPEN_PROFILE_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profileId, options })
+    body: JSON.stringify({ profileId })
   })
   if (!res.ok) throw new Error(`bad status ${res.status}`)
   const data = await res.json() as any
@@ -31,7 +32,7 @@ export async function openOneProfileAndConnect(profileId: string, options: OpenP
   return { profileId }
 }
 
-export async function openProfilesWithConcurrency(profileIds: string[], options: OpenProfileOptions, concurrency: number) {
+export async function openProfilesWithConcurrency(profileIds: string[], concurrency: number) {
   const limit = Math.max(1, Math.min(concurrency, profileIds.length))
   const results: { profileId: string }[] = []
   let cursor = 0
@@ -40,7 +41,7 @@ export async function openProfilesWithConcurrency(profileIds: string[], options:
       const index = cursor++
       const id = profileIds[index]
       try {
-        const r = await openOneProfileAndConnect(id, options)
+        const r = await openOneProfileAndConnect(id)
         results.push(r)
       } catch (e) {
         console.error('open/connect failed', id, e)

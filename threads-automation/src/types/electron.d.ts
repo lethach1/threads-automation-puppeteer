@@ -10,10 +10,9 @@ declare global {
     automationApi: {
       runOpenProfiles(payload: {
         profileIds: string[]
-        windowWidth?: number
-        windowHeight?: number
-        scalePercent?: number
-        concurrency?: number
+        // windowWidth?: number  // Không cần sử dụng
+        // windowHeight?: number // Không cần sử dụng
+        // scalePercent?: number // Không cần sử dụng
       }): Promise<{
         success: boolean
         opened?: { profileId: string }[]
