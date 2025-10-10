@@ -1,0 +1,28 @@
+directories:
+  output: release/${version}
+  buildResources: build
+$schema: https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json
+appId: com.threadsautomation.app
+asar: true
+productName: Threads Automation
+icon: src/assets/icon.png
+files:
+  - filter:
+      - dist
+      - dist-electron
+mac:
+  target:
+    - dmg
+  artifactName: ${productName}-Mac-${version}-Installer.${ext}
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  artifactName: ${productName}-Windows-${version}-Portable.${ext}
+  requestedExecutionLevel: asInvoker
+linux:
+  target:
+    - AppImage
+  artifactName: ${productName}-Linux-${version}.${ext}
+electronVersion: 30.5.1
