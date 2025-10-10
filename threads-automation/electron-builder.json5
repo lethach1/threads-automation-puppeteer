@@ -28,7 +28,7 @@
       }
     ],
     "artifactName": "${productName}-Windows-${version}-Portable.${ext}",
-    "console": true
+    "requestedExecutionLevel": "asInvoker"
   },
   "linux": {
     "target": [

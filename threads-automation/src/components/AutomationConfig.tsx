@@ -44,26 +44,26 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
       useInputExcel: true,
       filePath: '',
       numThreads: 5,
-      schedules: [] as ScheduleItem[],
+      schedules: [] as any[], // Không sử dụng schedule feature
       csvData: [] as CsvRow[]
     },
     'login': {
       useInputExcel: true,
       filePath: '',
       numThreads: 5,
-      schedules: [] as ScheduleItem[],
+      schedules: [] as any[], // Không sử dụng schedule feature
       csvData: [] as CsvRow[]
     },
     'interactive': {
       useInputExcel: true,
       filePath: '',
       numThreads: '5',
-      schedules: [] as ScheduleItem[],
+      schedules: [] as any[], // Không sử dụng schedule feature
       csvData: [] as CsvRow[]
     }
   })
   
-  type ScheduleItem = { id: string, value: DateTimeValue, saved: boolean }
+  // type ScheduleItem = { id: string, value: DateTimeValue, saved: boolean } // Không sử dụng
   
   // Get current scenario data - using postAndComment as default since we removed scenario selection
   const currentScenario = scenarios['postAndComment']
