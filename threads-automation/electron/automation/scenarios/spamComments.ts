@@ -475,7 +475,8 @@ const CommentFeedsAndSearch = async (
 }
 
 export async function run(page: Page, input: Input = {}) {
-  page.setDefaultTimeout(20000)
+  page.setDefaultTimeout(60000)
+  page.setDefaultNavigationTimeout(90000)
   try {
     console.log('Starting surfing threads and commenting...')
     
@@ -494,9 +495,24 @@ export async function run(page: Page, input: Input = {}) {
     console.log('[input] items count:', items.length)   
 
     //start script
-    // Step 1: Navigate to Threads
+    // Step 1: Navigate to Threads (robust with retry)
     console.log('Step 1: Navigate to Threads')
-    await page.goto('https://threads.com/', { waitUntil: 'networkidle2' })
+    const navigateWithRetry = async (targetUrl: string, maxAttempts: number = 3) => {
+      let lastError: unknown
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 })
+          return
+        } catch (err) {
+          lastError = err
+          const backoffMs = 2000 * attempt
+          console.warn(`[spam.nav] attempt ${attempt}/${maxAttempts} failed. Retrying in ${backoffMs}ms...`)
+          await humanDelay(backoffMs, backoffMs + 500)
+        }
+      }
+      throw lastError
+    }
+    await navigateWithRetry('https://threads.com/')
     await humanDelay(2000, 4000)
 
     // Handle feeds comments first, before any search navigation

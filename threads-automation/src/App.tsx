@@ -18,7 +18,7 @@ function App() {
     // windowWidth: 800,    // Không cần sử dụng
     // windowHeight: 600,   // Không cần sử dụng
     // scalePercent: 100,   // Không cần sử dụng
-    numThreads: 5
+    numThreads: 3
   })
 
   if (view === 'profiles') {

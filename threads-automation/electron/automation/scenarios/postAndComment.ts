@@ -20,7 +20,8 @@ type Input = {
 
 export async function run(page: Page, input: Input = {}) {
   // Improve debuggability: surface errors and page logs
-  page.setDefaultTimeout(20000)
+  page.setDefaultTimeout(60000)
+  page.setDefaultNavigationTimeout(90000)
   page.on('pageerror', (e) => console.error('[pageerror]', e))
   page.on('error', (e) => console.error('[targeterror]', e))
   // Removed verbose console relay from page to keep logs clean
@@ -304,9 +305,24 @@ export async function run(page: Page, input: Input = {}) {
     }    
 
     //start script
-    // Step 1: Navigate to Threads
+    // Step 1: Navigate to Threads (robust with retry)
     console.log('Step 1: Start script')
-    await page.goto('https://threads.com/', { waitUntil: 'networkidle2' })
+    const navigateWithRetry = async (targetUrl: string, maxAttempts: number = 3) => {
+      let lastError: unknown
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 })
+          return
+        } catch (err) {
+          lastError = err
+          const backoffMs = 2000 * attempt
+          console.warn(`[nav] attempt ${attempt}/${maxAttempts} failed. Retrying in ${backoffMs}ms...`)
+          await humanDelay(backoffMs, backoffMs + 500)
+        }
+      }
+      throw lastError
+    }
+    await navigateWithRetry('https://threads.com/')
     await humanDelay(2000, 4000)
 
     // Unified loop: first item runs full flow; subsequent items run lightweight post-only flow
@@ -595,7 +611,7 @@ export async function run(page: Page, input: Input = {}) {
           }
         }
 
-        await page.reload({ waitUntil: 'networkidle2' })
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 })
         await humanDelay(3000, 5000)
 
       await humanClick(page,'.x1ypdohk > path')

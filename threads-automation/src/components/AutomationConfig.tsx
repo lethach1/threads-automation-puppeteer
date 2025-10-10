@@ -43,21 +43,21 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
     'postAndComment': {
       useInputExcel: true,
       filePath: '',
-      numThreads: 5,
+      numThreads: 3,
       schedules: [] as ScheduleItem[],
       csvData: [] as CsvRow[]
     },
     'login': {
       useInputExcel: true,
       filePath: '',
-      numThreads: 5,
+      numThreads: 3,
       schedules: [] as ScheduleItem[],
       csvData: [] as CsvRow[]
     },
     'interactive': {
       useInputExcel: true,
       filePath: '',
-      numThreads: '5',
+      numThreads: '3',
       schedules: [] as ScheduleItem[],
       csvData: [] as CsvRow[]
     }
@@ -692,7 +692,7 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
                      const n = parseInt(s.replace(/\D+/g, ''), 10)
                      return Number.isFinite(n) ? n : fallback
                    }
-                   const threads = toInt(currentScenario.numThreads, 5)
+                  const threads = toInt(currentScenario.numThreads, 3)
                   const config = {
                      numThreads: Math.max(1, threads),
                      csvData: currentScenario.csvData,

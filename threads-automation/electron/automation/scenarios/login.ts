@@ -72,7 +72,8 @@ type Input = {
 
 
 export async function run(page: Page, input: Input = {}) {
-    page.setDefaultTimeout(20000)
+    page.setDefaultTimeout(60000)
+    page.setDefaultNavigationTimeout(90000)
     try {
       console.log('Starting login...')
       
@@ -93,8 +94,23 @@ export async function run(page: Page, input: Input = {}) {
         return { success: false, message: 'No username provided' }
       }
 
-      // Navigate to login
-      await page.goto('https://www.threads.com/login', { waitUntil: 'networkidle2' })
+      // Navigate to login (robust with retry + longer timeout)
+      const navigateWithRetry = async (targetUrl: string, maxAttempts: number = 3) => {
+        let lastError: unknown
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 })
+            return
+          } catch (err) {
+            lastError = err
+            const backoffMs = 2000 * attempt
+            console.warn(`[login.nav] attempt ${attempt}/${maxAttempts} failed. Retrying in ${backoffMs}ms...`)
+            await humanDelay(backoffMs, backoffMs + 500)
+          }
+        }
+        throw lastError
+      }
+      await navigateWithRetry('https://www.threads.com/login')
       await humanDelay(2000, 4000)
 
       // Clear inputs then type credentials
