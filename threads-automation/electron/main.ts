@@ -56,11 +56,19 @@ function createWindow() {
     icon: path.join(process.env.APP_ROOT, 'src/assets/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
     },
   })
 
-  // Mở DevTools để xem log
-  win.webContents.openDevTools()
+  // Redirect console logs to main process console
+  win.webContents.on('console-message', (_event, level, message, _line, _sourceId) => {
+    const levelMap: Record<number, string> = { 0: 'INFO', 1: 'WARN', 2: 'ERROR', 3: 'DEBUG' }
+    console.log(`[Renderer ${levelMap[level] || 'LOG'}] ${message}`)
+  })
+
+  // Optional: Uncomment to open DevTools (for debugging)
+  // win.webContents.openDevTools()
 
   // Test active push message to Renderer-process.
   win.webContents.on('did-finish-load', () => {

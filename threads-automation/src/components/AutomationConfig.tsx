@@ -63,7 +63,7 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
     }
   })
   
-  // type ScheduleItem = { id: string, value: DateTimeValue, saved: boolean } // Không sử dụng
+  type ScheduleItem = { id: string, value: any, saved: boolean }
   
   // Get current scenario data - using postAndComment as default since we removed scenario selection
   const currentScenario = scenarios['postAndComment']
@@ -311,15 +311,7 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
       errors.push('Warning: Avoid imports - backend handles all dependencies')
     }
     
-    // Warn about function definitions (should not define run function)
-    if (content.includes('async function run') || content.includes('function run')) {
-      errors.push('Warning: Do not define run function - backend provides it')
-    }
-    
-    // Warn about module.exports (should not export)
-    if (content.includes('module.exports')) {
-      errors.push('Warning: Do not export - backend handles module.exports')
-    }
+    // Removed validation warnings for run function and module.exports
     
     return { isValid: errors.length === 0, errors }
   }
