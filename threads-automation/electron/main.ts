@@ -7,7 +7,7 @@ import { promisify } from 'util'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // IMPORTANT: Avoid importing modules that pull puppeteer/ws to prevent bufferutil issues
-type OpenProfileOptions = { windowWidth: number; windowHeight: number; scalePercent: number }
+// type OpenProfileOptions = { windowWidth: number; windowHeight: number; scalePercent: number } // Không sử dụng
 import { openProfilesWithConcurrency, closeProfile, withPage } from './sessionManager'
 
 // Use require for external modules after env flags are set
