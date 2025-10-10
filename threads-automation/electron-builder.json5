@@ -21,20 +21,14 @@
   "win": {
     "target": [
       {
-        "target": "nsis",
+        "target": "portable",
         "arch": [
           "x64"
         ]
       }
     ],
-    "artifactName": "${productName}-Windows-${version}-Setup.${ext}",
-    "console": true
-  },
-  "nsis": {
-    "oneClick": false,
-    "perMachine": false,
-    "allowToChangeInstallationDirectory": true,
-    "deleteAppDataOnUninstall": false
+    "artifactName": "${productName}-Windows-${version}-Portable.${ext}",
+    "requestedExecutionLevel": "asInvoker"
   },
   "linux": {
     "target": [
