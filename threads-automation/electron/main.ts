@@ -84,7 +84,8 @@ const setupConsoleLogging = () => {
     originalWarn = console.warn
     
     const writeToFile = (level: string, ...args: any[]) => {
-      const timestamp = new Date().toISOString()
+      const now = new Date()
+      const timestamp = now.toISOString().replace('T', ' ').replace('Z', '').slice(0, 23)
       const message = `[${timestamp}] [${level}] ${args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')}\n`
       
       try {

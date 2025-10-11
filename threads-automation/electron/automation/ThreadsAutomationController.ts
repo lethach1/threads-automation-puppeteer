@@ -24,21 +24,37 @@ export type ScenarioResult = { success: boolean; data?: any; error?: string }
 
 // Function to get custom scripts directory, handling both dev and production paths
 const getCustomScriptsDir = (): string => {
-  // In production (asar), check asar.unpacked first
+  // PRIORITY 1: User uploaded scripts directory (Documents/ThreadsAutomation/custom-scripts)
+  const userScriptsPath = path.join(process.env.USERPROFILE || '', 'Documents', 'ThreadsAutomation', 'custom-scripts')
+  console.log('[router] Checking user scripts path:', userScriptsPath)
+  console.log('[router] User path exists:', fs.existsSync(userScriptsPath))
+  if (fs.existsSync(userScriptsPath)) {
+    console.log('[router] Using user uploaded scripts:', userScriptsPath)
+    // List files in directory for debugging
+    try {
+      const files = fs.readdirSync(userScriptsPath)
+      console.log('[router] Files in user directory:', files)
+    } catch (err) {
+      console.log('[router] Error reading user directory:', err)
+    }
+    return userScriptsPath
+  }
+  
+  // PRIORITY 2: In production (asar), check asar.unpacked
   const asarUnpackedPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'custom-scripts')
   if (fs.existsSync(asarUnpackedPath)) {
     console.log('[router] Using asar.unpacked custom scripts:', asarUnpackedPath)
     return asarUnpackedPath
   }
   
-  // In development or non-asar builds
+  // PRIORITY 3: In development or non-asar builds
   const devPath = path.join(process.cwd(), 'dist-electron', 'custom-scripts')
   if (fs.existsSync(devPath)) {
     console.log('[router] Using dev custom scripts:', devPath)
     return devPath
   }
   
-  // Fallback to __dirname relative path
+  // PRIORITY 4: Fallback to __dirname relative path
   const dirnamePath = path.join(__dirname, '..', 'custom-scripts')
   console.log('[router] Using __dirname custom scripts fallback:', dirnamePath)
   return dirnamePath
@@ -82,13 +98,27 @@ export const runAutomationOnPage = async (
     // Try to load from custom scripts first, then built-in scenarios
     console.log('[router] resolving scenario:', scenario)
         
-        // First try custom scripts (template format)
+        // First try custom scripts (user uploaded)
         try {
           const customScriptsDir = getCustomScriptsDir()
-          const customScriptPath = path.join(customScriptsDir, `${scenario}.cjs`)
-          console.log('[router] trying custom script path:', customScriptPath)
           
-          if (fs.existsSync(customScriptPath)) {
+          // Try multiple file extensions and names (upload API saves as .cjs)
+          const possiblePaths = [
+            path.join(customScriptsDir, `${scenario}.cjs`),    // uploaded: sample-test-he.cjs
+            path.join(customScriptsDir, `${scenario}.js`),     // manual upload: sample-test-he.js
+            path.join(customScriptsDir, `${scenario}`)         // no extension
+          ]
+          
+          let customScriptPath = ''
+          for (const testPath of possiblePaths) {
+            if (fs.existsSync(testPath)) {
+              customScriptPath = testPath
+              break
+            }
+          }
+          
+          if (customScriptPath) {
+            console.log('[router] custom script file found:', customScriptPath)
             console.log('[router] custom script file exists, loading...')
             
             // Simple require - scripts use relative imports
@@ -101,7 +131,7 @@ export const runAutomationOnPage = async (
               console.log('[router] custom script does not export run function')
             }
           } else {
-            console.log('[router] custom script file does not exist:', customScriptPath)
+            console.log('[router] custom script file does not exist in any format:', possiblePaths)
           }
         } catch (customError) {
           console.log('[router] custom script not found, trying built-in scenarios:', customError)
