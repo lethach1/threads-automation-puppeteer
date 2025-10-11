@@ -10,6 +10,7 @@ type AutomationSettings = {
   numThreads: number
   csvData?: Array<Record<string, string>>
   selectedScenario?: string
+  filePath?: string
 }
 
 function App() {
@@ -41,7 +42,8 @@ function App() {
         initialSettings={{
           numThreads: settings.numThreads,
           csvData: settings.csvData,
-          selectedScenario: settings.selectedScenario
+          selectedScenario: settings.selectedScenario,
+          filePath: settings.filePath
         }}
         onContinue={(config) => {
           setSettings(config as any)
