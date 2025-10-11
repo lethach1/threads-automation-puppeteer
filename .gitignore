@@ -81,3 +81,9 @@ profiles/*/chrome-profile/
 profiles/*/chrome-cache/
 profiles/*/cookies.json.bak
 
+# Build outputs and releases
+release/
+dist/
+dist-electron/
+dist-debug/
+

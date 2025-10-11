@@ -1,6 +1,7 @@
 # Ignore Electron build outputs
 dist-electron/
 dist-electron/**
+release/
 
 # Optional: ignore source maps in dist
 dist-electron/**/*.map

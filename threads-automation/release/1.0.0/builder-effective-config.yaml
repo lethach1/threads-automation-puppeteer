@@ -4,6 +4,9 @@ directories:
 $schema: https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json
 appId: com.threadsautomation.app
 asar: true
+asarUnpack:
+  - '**/dist-electron/custom-scripts/**/*'
+  - '**/dist-electron/automation/**/*'
 productName: Threads Automation
 icon: src/assets/icon.png
 files:

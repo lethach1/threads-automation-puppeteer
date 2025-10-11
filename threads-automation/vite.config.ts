@@ -49,24 +49,36 @@ export default defineConfig({
           copyRecursive(sourceDir, destDir)
           console.log('✅ Copied automation folder to dist-electron')
         }
+        
+        // Create custom-scripts directory for user uploaded scripts
+        const customScriptsDest = path.join(__dirname, 'dist-electron', 'custom-scripts')
+        
+        // Ensure custom-scripts directory exists
+        if (!fs.existsSync(customScriptsDest)) {
+          fs.mkdirSync(customScriptsDest, { recursive: true })
+          console.log('✅ Created custom-scripts directory')
+        }
       }
     },
     electron({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
-        // Ensure optional native deps from ws (bufferutil, utf-8-validate) are not bundled
-        rollupOptions: {
-          external: [
-            'ws', 
-            'bufferutil', 
-            'utf-8-validate',
-            'puppeteer-core',
-            'node-fetch',
-            'url',
-            'fs/promises',
-            'path'
-          ]
+        vite: {
+          build: {
+            rollupOptions: {
+              external: [
+                'ws', 
+                'bufferutil', 
+                'utf-8-validate',
+                'puppeteer-core',
+                'node-fetch',
+                'url',
+                'fs/promises',
+                'path'
+              ]
+            }
+          }
         }
       },
       preload: {

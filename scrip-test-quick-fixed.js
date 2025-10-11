@@ -6,9 +6,12 @@ async function run(page, input = {}) {
   try {
     console.log('🚀 Starting custom navigation test...')
     console.log('📝 Input:', input)
-    
-    // Load helpers dynamically (CJS-safe)
-    const { humanDelay } = await import('../automation/human-behavior.js')
+    //mới
+    // Simple inline humanDelay function (no dependencies needed)
+    const humanDelay = async (min = 1000, max = 3000) => {
+      const delay = Math.floor(Math.random() * (max - min + 1)) + min
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
 
     // Robust navigation helper with retry + backoff
     const navigateWithRetry = async (targetUrl, maxAttempts = 3) => {
@@ -56,5 +59,5 @@ async function run(page, input = {}) {
     await browser.close()
   }
 }
-
 module.exports = { run }
+

@@ -22,7 +22,27 @@ declare global {
 
 export type ScenarioResult = { success: boolean; data?: any; error?: string }
 
-const CUSTOM_SCRIPTS_DIR = path.join(process.cwd(), 'dist-electron', 'custom-scripts')
+// Function to get custom scripts directory, handling both dev and production paths
+const getCustomScriptsDir = (): string => {
+  // In production (asar), check asar.unpacked first
+  const asarUnpackedPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist-electron', 'custom-scripts')
+  if (fs.existsSync(asarUnpackedPath)) {
+    console.log('[router] Using asar.unpacked custom scripts:', asarUnpackedPath)
+    return asarUnpackedPath
+  }
+  
+  // In development or non-asar builds
+  const devPath = path.join(process.cwd(), 'dist-electron', 'custom-scripts')
+  if (fs.existsSync(devPath)) {
+    console.log('[router] Using dev custom scripts:', devPath)
+    return devPath
+  }
+  
+  // Fallback to __dirname relative path
+  const dirnamePath = path.join(__dirname, '..', 'custom-scripts')
+  console.log('[router] Using __dirname custom scripts fallback:', dirnamePath)
+  return dirnamePath
+}
 
 // Template for custom scripts
 /*
@@ -64,7 +84,8 @@ export const runAutomationOnPage = async (
         
         // First try custom scripts (template format)
         try {
-          const customScriptPath = path.join(CUSTOM_SCRIPTS_DIR, `${scenario}.cjs`)
+          const customScriptsDir = getCustomScriptsDir()
+          const customScriptPath = path.join(customScriptsDir, `${scenario}.cjs`)
           console.log('[router] trying custom script path:', customScriptPath)
           
           if (fs.existsSync(customScriptPath)) {

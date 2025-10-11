@@ -116,26 +116,58 @@ const openConsoleWindow = () => {
     setupConsoleLogging()
   }
   
-  try {
-    // Create a console window that monitors the log file
-    const consoleProcess = spawn('cmd.exe', [
-      '/k', 
-      `echo Threads Automation - Console Logs && echo. && echo Log file: ${logFile} && echo. && echo Monitoring logs... && echo Press Ctrl+C to stop monitoring && echo. && powershell -Command "Get-Content '${logFile}' -Wait -Tail 10" || echo PowerShell failed, using type command && type "${logFile}" && pause`
-    ], {
-      detached: true,
-      stdio: 'inherit'
-    })
-    
-    // Keep the process alive and handle errors
-    consoleProcess.on('error', (error) => {
-      console.warn('Console process error:', error)
-    })
-    
-    consoleProcess.unref()
-    console.log('✅ Console window opened for automation logs')
-    console.log(`📝 Log file: ${logFile}`)
-  } catch (consoleError) {
-    console.warn('Failed to open console window:', consoleError)
+  if (!VITE_DEV_SERVER_URL || process.env.SHOW_CONSOLE === 'true') {
+    try {
+      // Create a batch script that auto-refreshes logs every 2 seconds
+      // This is the most reliable method that works on all Windows systems
+      const batchContent = `@echo off
+title Threads Automation - Console Logs
+color 0A
+echo ========================================
+echo   Threads Automation - Console Logs
+echo ========================================
+echo.
+echo Log file: ${logFile}
+echo.
+echo Auto-refreshing every 2 seconds...
+echo Press Ctrl+C to stop
+echo ========================================
+echo.
+:loop
+cls
+echo ======================================== Threads Automation Logs ========================================
+echo Log file: ${logFile} ^| Auto-refresh every 2s ^| Press Ctrl+C to stop
+echo =====================================================================================================
+echo.
+type "${logFile}" 2>nul
+if errorlevel 1 (
+  echo [Waiting for logs...]
+)
+timeout /t 2 /nobreak >nul
+goto loop
+`
+      
+      const tempBatchFile = path.join(process.env.TEMP || '', 'threads-automation-console.bat')
+      fs.writeFileSync(tempBatchFile, batchContent, 'utf8')
+      
+      // Open in a new CMD window with /k to keep it open
+      const consoleProcess = spawn('cmd.exe', ['/c', 'start', '"Threads Automation Logs"', 'cmd.exe', '/k', `"${tempBatchFile}"`], {
+        detached: true,
+        stdio: 'ignore',
+        shell: true
+      })
+      
+      consoleProcess.on('error', (error) => {
+        console.warn('Console process error:', error)
+      })
+      
+      consoleProcess.unref()
+      console.log('✅ Console window opened for automation logs')
+      console.log(`📝 Log file: ${logFile}`)
+      console.log(`📝 Batch file: ${tempBatchFile}`)
+    } catch (consoleError) {
+      console.warn('Failed to open console window:', consoleError)
+    }
   }
 }
 
