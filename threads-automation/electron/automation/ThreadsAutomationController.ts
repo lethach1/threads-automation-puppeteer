@@ -145,7 +145,8 @@ export const runAutomationOnPage = async (
         const scenarioMap: Record<string, string> = {
           'spamComments': 'spamComments',
           'postAndComment': 'postAndComment',
-          'downloadStatusAndImages': 'downloadStatusAndImages'
+          'downloadStatusAndImages': 'downloadStatusAndImages',
+          'downloadReddit': 'downloadReddit'
         }
         
         const mappedScenario = scenarioMap[scenario] || scenario

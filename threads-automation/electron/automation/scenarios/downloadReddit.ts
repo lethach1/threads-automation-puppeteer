@@ -23,15 +23,15 @@ type Input = {
   items?: any[]
   // Optional URL to scrape (defaults to Reddit home)
   targetUrl?: string
-  // Optional filter: only process posts within N recent days
-  recentDays?: number
+  // Optional: number of posts to process
+  quantity?: number
 }
 
 type NormalizedInput = {
   forumName?: string
   linkDirectory?: string
   targetUrl?: string
-  recentDays?: number
+  quantity?: number
 }
 
 // Pure helper function to normalize input data
@@ -53,19 +53,19 @@ const buildNormalizedInput = (input: Input) => {
       }
       const forumName = getByBase('Forum Name')
       const linkDirectory = getByBase('Folder Directory')
-      const recentDaysRaw = getByBase('Recent Days')
+      const quantityRaw = getByBase('Quantity')
 
       return { 
         linkDirectory,
         targetUrl: undefined,
         forumName,
-        recentDays: recentDaysRaw != null ? Number(recentDaysRaw) : undefined
+        quantity: quantityRaw != null ? Number(quantityRaw) : undefined
       }
     } catch {
       return { 
         forumName: undefined, 
         linkDirectory: undefined,
-        recentDays: undefined,
+        quantity: undefined,
         targetUrl: undefined
       }
     }
@@ -116,6 +116,20 @@ const ensureDir = async (dirPath: string) => {
   }
 }
 
+const formatTsToYYMMDD = (ts: number | undefined) => {
+  if (typeof ts !== 'number' || Number.isNaN(ts)) return ''
+  const d = new Date(ts)
+  const yy = String(d.getUTCFullYear()).slice(2)
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  return `${yy}/${mm}/${dd}`
+}
+
+const sanitizeFolderName = (name: string) => {
+  // replace slashes and invalid characters with underscore; limit length
+  return name.replace(/[\\/]/g, '_').replace(/[^a-z0-9-_]/gi, '_').slice(0, 80)
+}
+
 const getFileExtensionFromUrl = (mediaUrl: string, fallback: string) => {
   try {
     const pathname = new URL(mediaUrl).pathname
@@ -125,7 +139,7 @@ const getFileExtensionFromUrl = (mediaUrl: string, fallback: string) => {
   return fallback
 }
 
-const sanitize = (name: string) => name.replace(/[^a-z0-9-_]/gi, '_').slice(0, 80)
+// removed unused sanitize helper
 
 const extractMediaUrlsFromPost = async (postHandle: any) => {
   return await postHandle.evaluate((el: Element) => {
@@ -174,41 +188,27 @@ const extractMediaUrlsFromPost = async (postHandle: any) => {
   })
 }
 
-// Extract cleaned status text from a post element
-const getStatusTextFromPost = async (postHandle: any): Promise<string> => {
-  try {
-    // Selector targeting post text container; keep minimal to avoid avatars/metadata
-    const statusSelector = 'div.x1a6qonq'
-    const statusElement = await postHandle.$(statusSelector)
-    if (!statusElement) return ''
-    const rawText: string = await statusElement.evaluate((el: Element) => (el.textContent || ''))
-    // Strip trailing "Translate" helper and trim
-    return rawText.replace(/\s*Translate\s*$/i, '').trim()
-  } catch {
-    return ''
-  }
-}
 
-// CSV helpers for statuses
-const ensureStatusesCsvHeader = async (csvPath: string) => {
+// CSV helpers for Reddit meta rows
+const ensureRedditMetaCsvHeader = async (csvPath: string) => {
   try {
     const stat = await fs.stat(csvPath).catch(() => null as any)
     if (!stat || stat.size === 0) {
       // Prepend UTF-8 BOM so Excel renders Vietnamese correctly; use CRLF line endings on Windows
-      await fs.writeFile(csvPath, '\uFEFFindex,status\r\n', { encoding: 'utf-8' })
-      console.log(`[csv] Initialized statuses CSV with header: ${csvPath}`)
+      await fs.writeFile(csvPath, '\uFEFFindex,title,text,label,ts\r\n', { encoding: 'utf-8' })
+      console.log(`[csv] Initialized reddit meta CSV with header: ${csvPath}`)
     }
   } catch (e) {
-    console.error('[csv] Failed to ensure CSV header:', e instanceof Error ? e.message : String(e))
+    console.error('[csv] Failed to ensure reddit meta CSV header:', e instanceof Error ? e.message : String(e))
   }
 }
 
-const appendStatusRow = async (csvPath: string, index: number, status: string) => {
+const appendRedditMetaRow = async (csvPath: string, index: number, title: string, text: string, label: string, tsStr: string) => {
   try {
-    const escaped = '"' + status.replace(/"/g, '""') + '"'
-    await fs.appendFile(csvPath, `${index},${escaped}\r\n`, { encoding: 'utf-8' })
+    const esc = (s: string) => '"' + (s || '').replace(/"/g, '""') + '"'
+    await fs.appendFile(csvPath, `${index},${esc(title)},${esc(text)},${esc(label)},${esc(tsStr)}\r\n`, { encoding: 'utf-8' })
   } catch (e) {
-    console.error('[csv] Failed to append status row:', e instanceof Error ? e.message : String(e))
+    console.error('[csv] Failed to append reddit meta row:', e instanceof Error ? e.message : String(e))
   }
 }
 
@@ -242,10 +242,13 @@ const savePostMediaFromHandle = async (
   // Chỉ cần đảm bảo base directory tồn tại, không tạo folder riêng cho post
   await ensureDir(baseOutputDir)
 
-  let mediaIndex = 0
-  for (const url of imgUrls) {
+  const postNum = String(postIndex + 1).padStart(3, '0')
+
+  // Save only the first image as image_{postIndex}
+  if (imgUrls.length > 0) {
+    const url = imgUrls[0]
     const ext = getFileExtensionFromUrl(url, '.jpg')
-    const filename = `post_${String(postIndex + 1).padStart(3, '0')}_image_${String(mediaIndex + 1).padStart(2, '0')}${ext}`
+    const filename = `image_${postNum}${ext}`
     const fp = path.join(baseOutputDir, filename)
     try {
       await downloadFile(url, fp)
@@ -253,13 +256,13 @@ const savePostMediaFromHandle = async (
     } catch (e) {
       console.warn(`[download] Failed to download image ${url}:`, e instanceof Error ? e.message : String(e))
     }
-    mediaIndex++
   }
 
-  mediaIndex = 0
-  for (const url of videoUrls) {
+  // Save only the first video as video_{postIndex}
+  if (videoUrls.length > 0) {
+    const url = videoUrls[0]
     const ext = getFileExtensionFromUrl(url, '.mp4')
-    const filename = `post_${String(postIndex + 1).padStart(3, '0')}_video_${String(mediaIndex + 1).padStart(2, '0')}${ext}`
+    const filename = `video_${postNum}${ext}`
     const fp = path.join(baseOutputDir, filename)
     try {
       await downloadFile(url, fp)
@@ -267,29 +270,29 @@ const savePostMediaFromHandle = async (
     } catch (e) {
       console.warn(`[download] Failed to download video ${url}:`, e instanceof Error ? e.message : String(e))
     }
-    mediaIndex++
   }
 }
 
 // Extract Reddit post metadata from a post element
 const getRedditPostMeta = async (postHandle: any) => {
   try {
-    const { titleAttr, titleText, iso, ts, text } = await postHandle.evaluate((el: Element) => {
+    const { titleAttr, titleText, iso, ts, text, label } = await postHandle.evaluate((el: Element) => {
       const post = el as HTMLElement
       const timeEl = post.querySelector('faceplate-timeago time') as HTMLTimeElement | null
       const iso = timeEl?.getAttribute('datetime') || ''
       const ts = iso ? Date.parse(iso) : NaN
+      const label = (timeEl?.textContent || '').trim()
       const titleAttr = post.getAttribute('post-title') || ''
       const titleAnchor = post.querySelector('a[slot="title"]') as HTMLAnchorElement | null
       const titleText = (titleAnchor?.textContent || '').trim()
       const textEl = post.querySelector('shreddit-post-text-body div[property="schema:articleBody"]') as HTMLElement | null
       const text = (textEl?.innerText || '').trim()
-      return { titleAttr, titleText, iso, ts, text }
+      return { titleAttr, titleText, iso, ts, text, label }
     })
     const title = (titleAttr && titleAttr.trim()) || (titleText && titleText.trim()) || ''
-    return { title, iso, ts: Number.isFinite(ts) ? ts : (iso ? Date.parse(iso) : NaN), text }
+    return { title, iso, ts: Number.isFinite(ts) ? ts : (iso ? Date.parse(iso) : NaN), text, label }
   } catch {
-    return { title: '', iso: '', ts: NaN, text: '' }
+    return { title: '', iso: '', ts: NaN, text: '', label: '' }
   }
 }
 
@@ -299,7 +302,7 @@ const downloadRedditPosts = async (
   linkDirectory: string | undefined,
   scopeSelector: string,
   postSelector: string,
-  recentDays?: number
+  quantity?: number
 ) => {
   try {
     console.log(`[download] Starting Reddit content download for directory: ${linkDirectory}`)
@@ -346,7 +349,7 @@ const downloadRedditPosts = async (
 
     // Prepare CSV path and header (write-as-you-go)
     const csvPath = path.join(baseOutputDir, 'reddit_posts.csv')
-    await ensureStatusesCsvHeader(csvPath)
+    await ensureRedditMetaCsvHeader(csvPath)
 
     while (true) {
       const hasUnprocessedPost = currentIndex < posts.length
@@ -361,29 +364,13 @@ const downloadRedditPosts = async (
           try {
             // Scroll post into view for natural behavior and lazy loading
             await humanScrollToElement(page, currentPost)
-            // Filter by recentDays if provided
-            let withinRange = true
-            if (recentDays && recentDays > 0) {
-              const meta = await getRedditPostMeta(currentPost)
-              if (meta.iso) {
-                const threshold = Date.now() - recentDays * 24 * 60 * 60 * 1000
-                withinRange = typeof meta.ts === 'number' && !Number.isNaN(meta.ts) ? meta.ts >= threshold : true
-              }
-            }
 
-            if (!withinRange) {
-              console.log(`[feed] Skip post at index=${currentIndex} due to date filter (recentDays=${recentDays})`)
-              currentIndex++
-              continue
-            }
-
-            const statusText = await getStatusTextFromPost(currentPost)
-            if (statusText) {
-              console.log(`[feed] Status text: "${statusText.slice(0, 100)}..." (len=${statusText.length})`)
-              await appendStatusRow(csvPath, currentIndex + 1, statusText)
-            } else {
-              console.log('[feed] No status text extracted for this post')
-            }
+            // Extract meta and text
+            const meta = await getRedditPostMeta(currentPost)
+            const postText = meta.text || ''
+            const tsStr = formatTsToYYMMDD(meta.ts)
+            console.log(`[meta] title="${(meta.title || '').slice(0, 80)}" label="${meta.label}" ts=${tsStr}`)
+            await appendRedditMetaRow(csvPath, currentIndex + 1, meta.title, postText, meta.label || '', tsStr)
 
             // Save media for this post
             await savePostMediaFromHandle(currentPost, baseOutputDir, currentIndex)
@@ -393,6 +380,13 @@ const downloadRedditPosts = async (
             // Tiếp tục với post tiếp theo thay vì dừng
           }
           currentIndex++
+
+          // Stop when reached desired quantity
+          const maxCount = Math.max(0, Number(quantity) || 0)
+          if (maxCount > 0 && currentIndex >= maxCount) {
+            console.log(`[feed] Reached quantity limit: ${maxCount}, stopping`)
+            break
+          }
         }
       } else {
         // No unprocessed posts left; try to scroll further to trigger lazy loading
@@ -414,7 +408,9 @@ const downloadRedditPosts = async (
       // Exit if we've processed everything and no more posts are loading
       const processedAllLoaded = currentIndex >= posts.length
       const giveUpLoadingMore = noNewPostsStreak >= MAX_NO_NEW_POSTS_STREAK
-      if (processedAllLoaded && giveUpLoadingMore) {
+      const maxCount = Math.max(0, Number(quantity) || 0)
+      const reachedQty = maxCount > 0 && currentIndex >= maxCount
+      if (processedAllLoaded && (giveUpLoadingMore || reachedQty)) {
         console.log('[feed] No more new posts detected; stopping processing')
         break
       }
@@ -444,7 +440,10 @@ export async function run(page: Page, input: Input = {}) {
     console.log('📝 Raw Input:', input)
 
     const { normalizedInput } = buildNormalizedInput(input)
-    const targetUrl = normalizedInput.targetUrl || input.targetUrl || buildRedditProfileUrl(normalizedInput.forumName || input.forumName) || 'https://www.reddit.com/'
+    const targetUrl = normalizedInput.targetUrl || buildRedditProfileUrl(normalizedInput.forumName || input.forumName)
+    if (!targetUrl) {
+      throw new Error('Missing forumName. Please provide forumName like "r/TroChuyenLinhTinh" or an explicit targetUrl.')
+    }
     console.log(`[navigate] Navigate: ${targetUrl}`)
 
     await page.goto(targetUrl, {
@@ -456,13 +455,19 @@ export async function run(page: Page, input: Input = {}) {
     await humanDelay(2000, 3500)
 
     const outputDir = normalizedInput.linkDirectory || input.linkDirectory
-    const recentDays = normalizedInput.recentDays ?? input.recentDays
+    const forum = normalizedInput.forumName || input.forumName
+    const forumSub = forum ? sanitizeFolderName(forum) : undefined
+    const finalOutputDir = forumSub && outputDir ? path.join(outputDir, forumSub) : (outputDir || undefined)
+    if (finalOutputDir) {
+      await ensureDir(finalOutputDir)
+    }
+    const quantity = normalizedInput.quantity ?? input.quantity
     await downloadRedditPosts(
       page,
-      outputDir,
+      finalOutputDir,
       'main#main-content',
       'article > shreddit-post',
-      recentDays
+      quantity
     )
 
     return { success: true }
