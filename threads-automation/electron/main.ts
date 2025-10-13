@@ -66,10 +66,48 @@ let consoleSetup = false
 let logFile = ''
 let originalLog: any, originalError: any, originalWarn: any
 
+// Auto-cleanup old log files (older than 3 days)
+const cleanupOldLogs = () => {
+  try {
+    const logDir = path.join(process.env.TEMP || '', 'ThreadsAutomation')
+    if (!fs.existsSync(logDir)) return
+    
+    const files = fs.readdirSync(logDir)
+    const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000) // 3 days in milliseconds
+    let cleanedCount = 0
+    
+    for (const file of files) {
+      const filePath = path.join(logDir, file)
+      
+      try {
+        const stats = fs.statSync(filePath)
+        
+        // Xóa file cũ hơn 3 ngày
+        if (stats.mtime.getTime() < threeDaysAgo) {
+          fs.unlinkSync(filePath)
+          cleanedCount++
+          console.log(`🗑️ Cleaned up old log: ${file}`)
+        }
+      } catch (fileError) {
+        console.warn(`Failed to process file ${file}:`, fileError)
+      }
+    }
+    
+    if (cleanedCount > 0) {
+      console.log(`✅ Cleanup completed: removed ${cleanedCount} old log files`)
+    }
+  } catch (error) {
+    console.warn('Failed to cleanup old logs:', error)
+  }
+}
+
 const setupConsoleLogging = () => {
   if (consoleSetup) return
   
   try {
+    // Cleanup old logs first
+    cleanupOldLogs()
+    
     // Create log file path
     const logDir = path.join(process.env.TEMP || '', 'ThreadsAutomation')
     if (!fs.existsSync(logDir)) {
@@ -701,3 +739,10 @@ ipcMain.handle('delete-custom-script', async (_event, scriptId) => {
     return { success: false, error: error?.message || 'Failed to delete script' }
   }
 })
+
+// Setup periodic cleanup every 6 hours
+setInterval(() => {
+  cleanupOldLogs()
+}, 6 * 60 * 60 * 1000) // 6 hours in milliseconds
+
+console.log('🕒 Log cleanup scheduled every 6 hours')
