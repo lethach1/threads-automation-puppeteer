@@ -5,10 +5,10 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 // Tabs components no longer needed - using sidebar instead
-import { HelpCircle, Plus, Trash2, Copy, Upload, FileText, Settings } from 'lucide-react'
+import { HelpCircle, Trash2, Copy, Upload, FileText, Settings } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import DatePickerAndTimePickerDemo, { type DateTimeValue } from '@/components/ui/datetime-picker'
+// import DatePickerAndTimePickerDemo, { type DateTimeValue } from '@/components/ui/datetime-picker' // Không sử dụng
 import { type CsvRow } from '@/utils/csvReader'
 
 type Props = { 
@@ -63,7 +63,7 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
     }
   })
   
-  type ScheduleItem = { id: string, value: DateTimeValue, saved: boolean }
+  type ScheduleItem = { id: string, value: any, saved: boolean }
   
   // Get current scenario data - using postAndComment as default since we removed scenario selection
   const currentScenario = scenarios['postAndComment']
@@ -101,31 +101,31 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
     }))
   }
 
-  const handleAddSchedule = () => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const initial: ScheduleItem = { id, value: { date: undefined, time: '06:30:00' }, saved: false }
-    updateScenario('schedules', [...currentScenario.schedules, initial])
-  }
+  // const handleAddSchedule = () => {
+  //   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  //   const initial: ScheduleItem = { id, value: { date: undefined, time: '06:30:00' }, saved: false }
+  //   updateScenario('schedules', [...currentScenario.schedules, initial])
+  // }
 
-  const handleChangeSchedule = (id: string, value: DateTimeValue) => {
-    const updatedSchedules = currentScenario.schedules.map((s) => (s.id === id ? { ...s, value } : s))
-    updateScenario('schedules', updatedSchedules)
-  }
+  // const handleChangeSchedule = (id: string, value: DateTimeValue) => {
+  //   const updatedSchedules = currentScenario.schedules.map((s) => (s.id === id ? { ...s, value } : s))
+  //   updateScenario('schedules', updatedSchedules)
+  // }
 
-  const handleSaveSchedule = (id: string) => {
-    const updatedSchedules = currentScenario.schedules.map((s) => (s.id === id ? { ...s, saved: true } : s))
-    updateScenario('schedules', updatedSchedules)
-  }
+  // const handleSaveSchedule = (id: string) => {
+  //   const updatedSchedules = currentScenario.schedules.map((s) => (s.id === id ? { ...s, saved: true } : s))
+  //   updateScenario('schedules', updatedSchedules)
+  // }
 
-  const handleEditSchedule = (id: string) => {
-    const updatedSchedules = currentScenario.schedules.map((s) => (s.id === id ? { ...s, saved: false } : s))
-    updateScenario('schedules', updatedSchedules)
-  }
+  // const handleEditSchedule = (id: string) => {
+  //   const updatedSchedules = currentScenario.schedules.map((s) => (s.id === id ? { ...s, saved: false } : s))
+  //   updateScenario('schedules', updatedSchedules)
+  // }
 
-  const handleDeleteSchedule = (id: string) => {
-    const updatedSchedules = currentScenario.schedules.filter((s) => s.id !== id)
-    updateScenario('schedules', updatedSchedules)
-  }
+  // const handleDeleteSchedule = (id: string) => {
+  //   const updatedSchedules = currentScenario.schedules.filter((s) => s.id !== id)
+  //   updateScenario('schedules', updatedSchedules)
+  // }
 
   const handleFileSelect = async () => {
     const api = window.api as any
@@ -311,15 +311,7 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
       errors.push('Warning: Avoid imports - backend handles all dependencies')
     }
     
-    // Warn about function definitions (should not define run function)
-    if (content.includes('async function run') || content.includes('function run')) {
-      errors.push('Warning: Do not define run function - backend provides it')
-    }
-    
-    // Warn about module.exports (should not export)
-    if (content.includes('module.exports')) {
-      errors.push('Warning: Do not export - backend handles module.exports')
-    }
+    // Removed validation warnings for run function and module.exports
     
     return { isValid: errors.length === 0, errors }
   }
