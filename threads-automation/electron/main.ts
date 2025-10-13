@@ -4,11 +4,14 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'fs'
 import { promisify } from 'util'
+import { spawn } from 'child_process'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // IMPORTANT: Avoid importing modules that pull puppeteer/ws to prevent bufferutil issues
 // type OpenProfileOptions = { windowWidth: number; windowHeight: number; scalePercent: number } // Không sử dụng
-import { openProfilesWithConcurrency, closeProfile, withPage } from './sessionManager'
+
+// Import sessionManager with error handling
+let sessionManager: any = null
 
 // Use require for external modules after env flags are set
 // const require = createRequire(import.meta.url)
@@ -19,6 +22,17 @@ process.env.WS_NO_UTF_8_VALIDATE = '1'
 
 // Enable Chromium/Electron logging to the console window (Windows debug builds)
 // app?.commandLine?.appendSwitch?.('enable-logging')  // Tắt verbose logging
+
+// Global error handlers to prevent crashes
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error)
+  // Don't exit the process, just log the error
+})
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason)
+  // Don't exit the process, just log the error
+})
 
 // Enable debug mode if DEBUG environment variable is set
 if (process.env.DEBUG === 'true') {
@@ -47,19 +61,205 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 
 let win: BrowserWindow | null
 
+// Console logging setup
+let consoleSetup = false
+let logFile = ''
+let originalLog: any, originalError: any, originalWarn: any
+
+// Auto-cleanup old log files (older than 3 days)
+const cleanupOldLogs = () => {
+  try {
+    const logDir = path.join(process.env.TEMP || '', 'ThreadsAutomation')
+    if (!fs.existsSync(logDir)) return
+    
+    const files = fs.readdirSync(logDir)
+    const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000) // 3 days in milliseconds
+    let cleanedCount = 0
+    
+    for (const file of files) {
+      const filePath = path.join(logDir, file)
+      
+      try {
+        const stats = fs.statSync(filePath)
+        
+        // Xóa file cũ hơn 3 ngày
+        if (stats.mtime.getTime() < threeDaysAgo) {
+          fs.unlinkSync(filePath)
+          cleanedCount++
+          console.log(`🗑️ Cleaned up old log: ${file}`)
+        }
+      } catch (fileError) {
+        console.warn(`Failed to process file ${file}:`, fileError)
+      }
+    }
+    
+    if (cleanedCount > 0) {
+      console.log(`✅ Cleanup completed: removed ${cleanedCount} old log files`)
+    }
+  } catch (error) {
+    console.warn('Failed to cleanup old logs:', error)
+  }
+}
+
+const setupConsoleLogging = () => {
+  if (consoleSetup) return
+  
+  try {
+    // Cleanup old logs first
+    cleanupOldLogs()
+    
+    // Create log file path
+    const logDir = path.join(process.env.TEMP || '', 'ThreadsAutomation')
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true })
+    }
+    
+    logFile = path.join(logDir, `threads-automation-${Date.now()}.log`)
+    
+    // Override console.log to write to file as well
+    originalLog = console.log
+    originalError = console.error
+    originalWarn = console.warn
+    
+    const writeToFile = (level: string, ...args: any[]) => {
+      const now = new Date()
+      const timestamp = now.toISOString().replace('T', ' ').replace('Z', '').slice(0, 23)
+      const message = `[${timestamp}] [${level}] ${args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')}\n`
+      
+      try {
+        fs.appendFileSync(logFile, message, 'utf8')
+      } catch (err) {
+        // Ignore file write errors
+      }
+      
+      // Also call original console method
+      if (level === 'ERROR') originalError(...args)
+      else if (level === 'WARN') originalWarn(...args)
+      else originalLog(...args)
+    }
+    
+    console.log = (...args: any[]) => writeToFile('LOG', ...args)
+    console.error = (...args: any[]) => writeToFile('ERROR', ...args)
+    console.warn = (...args: any[]) => writeToFile('WARN', ...args)
+    
+    consoleSetup = true
+    console.log('✅ Console logging setup completed')
+  } catch (consoleError) {
+    console.warn('Failed to setup console logging:', consoleError)
+  }
+}
+
+// Function to open console window when automation starts
+const openConsoleWindow = () => {
+  if (!logFile) {
+    setupConsoleLogging()
+  }
+  
+  if (!VITE_DEV_SERVER_URL || process.env.SHOW_CONSOLE === 'true') {
+    try {
+      // Create a batch script that auto-refreshes logs every 2 seconds
+      // This is the most reliable method that works on all Windows systems
+      const batchContent = `@echo off
+title Threads Automation - Console Logs
+color 0A
+echo ========================================
+echo   Threads Automation - Console Logs
+echo ========================================
+echo.
+echo Log file: ${logFile}
+echo.
+echo Auto-refreshing every 2 seconds...
+echo Press Ctrl+C to stop
+echo ========================================
+echo.
+:loop
+cls
+echo ======================================== Threads Automation Logs ========================================
+echo Log file: ${logFile} ^| Auto-refresh every 2s ^| Press Ctrl+C to stop
+echo =====================================================================================================
+echo.
+type "${logFile}" 2>nul
+if errorlevel 1 (
+  echo [Waiting for logs...]
+)
+timeout /t 2 /nobreak >nul
+goto loop
+`
+      
+      const tempBatchFile = path.join(process.env.TEMP || '', 'threads-automation-console.bat')
+      fs.writeFileSync(tempBatchFile, batchContent, 'utf8')
+      
+      // Open in a new CMD window with /k to keep it open
+      const consoleProcess = spawn('cmd.exe', ['/c', 'start', '"Threads Automation Logs"', 'cmd.exe', '/k', `"${tempBatchFile}"`], {
+        detached: true,
+        stdio: 'ignore',
+        shell: true
+      })
+      
+      consoleProcess.on('error', (error) => {
+        console.warn('Console process error:', error)
+      })
+      
+      consoleProcess.unref()
+      console.log('✅ Console window opened for automation logs')
+      console.log(`📝 Log file: ${logFile}`)
+      console.log(`📝 Batch file: ${tempBatchFile}`)
+    } catch (consoleError) {
+      console.warn('Failed to open console window:', consoleError)
+    }
+  }
+}
+
+// Lazy load sessionManager
+const loadSessionManager = async () => {
+  if (!sessionManager) {
+    try {
+      sessionManager = await import('./sessionManager')
+      console.log('✅ SessionManager loaded successfully')
+    } catch (error) {
+      console.error('❌ Failed to load sessionManager:', error)
+      throw error
+    }
+  }
+  return sessionManager
+}
+
 function createWindow() {
-  win = new BrowserWindow({
-    width: 1200,
-    height: 900,
-    minWidth: 1000,
-    minHeight: 700,
-    icon: path.join(process.env.APP_ROOT, 'src/assets/icon.png'),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-  })
+  try {
+    win = new BrowserWindow({
+      width: 1200,
+      height: 900,
+      minWidth: 1000,
+      minHeight: 700,
+      icon: path.join(process.env.APP_ROOT, 'src/assets/icon.png'),
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.mjs'),
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    })
+  } catch (error) {
+    console.error('Failed to create BrowserWindow:', error)
+    // Try minimal window as fallback
+    try {
+      win = new BrowserWindow({
+        width: 800,
+        height: 600,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+      })
+    } catch (fallbackError) {
+      console.error('Failed to create fallback window:', fallbackError)
+      return
+    }
+  }
+
+  // Setup console logging for production builds or when SHOW_CONSOLE=true
+  if (!VITE_DEV_SERVER_URL || process.env.SHOW_CONSOLE === 'true') {
+    setupConsoleLogging()
+  }
 
   // Redirect console logs to main process console
   win.webContents.on('console-message', (_event, level, message, _line, _sourceId) => {
@@ -101,7 +301,15 @@ app.on('activate', () => {
   }
 })
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  try {
+    createWindow()
+    console.log('✅ App window created successfully')
+  } catch (error) {
+    console.error('❌ Failed to create app window:', error)
+    // App will still run but without window
+  }
+})
 
 // IPC: Open directory picker and return selected path
 ipcMain.handle('select-directory', async () => {
@@ -257,7 +465,8 @@ ipcMain.handle('run-open-profiles', async (_event, payload) => {
     // }
     
     // Không cần concurrency limit vì đã xử lý ở frontend
-    const opened = await openProfilesWithConcurrency(profileIds, profileIds.length)
+    const sm = await loadSessionManager()
+    const opened = await sm.openProfilesWithConcurrency(profileIds, profileIds.length)
     console.log('[ipc] run-open-profiles opened:', opened)
     return { success: true, opened }
   } catch (error: any) {
@@ -272,7 +481,8 @@ ipcMain.handle('run-open-profiles', async (_event, payload) => {
 // Optional: IPC to close a single profile session
 ipcMain.handle('close-profile', async (_event, profileId: string) => {
   try {
-    const ok = await closeProfile(profileId)
+    const sm = await loadSessionManager()
+    const ok = await sm.closeProfile(profileId)
     if (!ok) return { success: false, error: 'session not found' }
     return { success: true }
   } catch (error: any) {
@@ -286,9 +496,13 @@ ipcMain.handle('run-automation-for-profile', async (_event, payload: { profileId
     const { profileId, scenario, input } = payload || ({} as any)
     console.log('[ipc] run-automation-for-profile for', profileId)
     if (!profileId) return { success: false, error: 'profileId is required' }
+    
+    // Open console window when automation starts
+    openConsoleWindow()
     const { runAutomationOnPage } = await import('./automation/ThreadsAutomationController.js')
     console.log('[ipc] scenario:', scenario, 'input keys:', input ? Object.keys(input) : [])
-    await withPage(profileId, async (page) => {
+    const sm = await loadSessionManager()
+    await sm.withPage(profileId, async (page: any) => {
       const result = await runAutomationOnPage(page, { scenario, input })
       if (!result?.success) throw new Error(result?.error || 'Scenario failed')
     })
@@ -313,6 +527,9 @@ ipcMain.handle('run-automation-batch', async (_event, payload: { profileIds: str
 
     console.log('[ipc] run-automation-batch', { count: profileIds.length, concurrency, scenario })
 
+    // Open console window when batch automation starts
+    openConsoleWindow()
+    
     const { runAutomationOnPage } = await import('./automation/ThreadsAutomationController.js')
     const results: Array<{ profileId: string; success: boolean; error?: string }> = []
     let cursor = 0
@@ -322,7 +539,8 @@ ipcMain.handle('run-automation-batch', async (_event, payload: { profileIds: str
         const id = profileIds[index]
         const input = (inputs && (id in inputs)) ? inputs[id] : (inputs?.default ?? {})
         try {
-          await withPage(id, async (page) => {
+          const sm = await loadSessionManager()
+          await sm.withPage(id, async (page: any) => {
             const result = await runAutomationOnPage(page, { scenario, input })
             if (!result?.success) throw new Error(result?.error || 'Scenario failed')
           })
@@ -344,22 +562,77 @@ ipcMain.handle('run-automation-batch', async (_event, payload: { profileIds: str
 })
 
 // Custom Script Management APIs
-const CUSTOM_SCRIPTS_DIR = path.join(__dirname, 'custom-scripts')
+// Initialize with safe fallback - don't create directories at startup
+let CUSTOM_SCRIPTS_DIR: string = ''
 
-// Ensure custom scripts directory exists
-if (!fs.existsSync(CUSTOM_SCRIPTS_DIR)) {
-  fs.mkdirSync(CUSTOM_SCRIPTS_DIR, { recursive: true })
-  console.log(`[scripts] Created custom scripts directory: ${CUSTOM_SCRIPTS_DIR}`)
+// Lazy initialization function
+const getCustomScriptsDir = (): string => {
+  if (CUSTOM_SCRIPTS_DIR) {
+    return CUSTOM_SCRIPTS_DIR
+  }
+
+  // Priority order for directory selection (all guaranteed to exist on Windows)
+  const possibleDirs = [
+    // 1. User's Documents folder (most reliable)
+    path.join(process.env.USERPROFILE || '', 'Documents', 'ThreadsAutomation', 'custom-scripts'),
+    
+    // 2. User's Downloads folder (also very reliable)
+    path.join(process.env.USERPROFILE || '', 'Downloads', 'ThreadsAutomation', 'custom-scripts'),
+    
+    // 3. Temp directory (always exists)
+    path.join(process.env.TEMP || process.env.TMP || '', 'ThreadsAutomation', 'custom-scripts'),
+    
+    // 4. AppData Local (always exists)
+    path.join(process.env.LOCALAPPDATA || '', 'ThreadsAutomation', 'custom-scripts')
+  ]
+
+  // Try each directory in order until one works
+  for (const dirPath of possibleDirs) {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        // Ensure parent directories exist first
+        const parentDir = path.dirname(dirPath)
+        if (!fs.existsSync(parentDir)) {
+          fs.mkdirSync(parentDir, { recursive: true })
+        }
+        fs.mkdirSync(dirPath, { recursive: true })
+      }
+      
+      // Test write access
+      const testFile = path.join(dirPath, 'test-write.tmp')
+      fs.writeFileSync(testFile, 'test')
+      fs.unlinkSync(testFile)
+      
+      // If we get here, this directory works
+      CUSTOM_SCRIPTS_DIR = dirPath
+      console.log(`[scripts] Using custom scripts directory: ${CUSTOM_SCRIPTS_DIR}`)
+      return CUSTOM_SCRIPTS_DIR
+    } catch (error) {
+      console.warn(`[scripts] Failed to use directory ${dirPath}:`, error)
+      continue
+    }
+  }
+
+  // If all attempts failed, use temp as fallback
+  const fallbackDir = path.join(process.env.TEMP || '', 'threads-automation-scripts')
+  try {
+    if (!fs.existsSync(fallbackDir)) {
+      fs.mkdirSync(fallbackDir, { recursive: true })
+    }
+    CUSTOM_SCRIPTS_DIR = fallbackDir
+    console.log(`[scripts] Using fallback directory: ${CUSTOM_SCRIPTS_DIR}`)
+    return CUSTOM_SCRIPTS_DIR
+  } catch (error) {
+    console.error('[scripts] All directory creation attempts failed:', error)
+    throw new Error('Unable to create custom scripts directory')
+  }
 }
 
 // Upload and save custom script
 ipcMain.handle('upload-custom-script', async (_event, { fileName, content }) => {
   try {
-    // Ensure custom scripts directory exists before saving
-    if (!fs.existsSync(CUSTOM_SCRIPTS_DIR)) {
-      fs.mkdirSync(CUSTOM_SCRIPTS_DIR, { recursive: true })
-      console.log(`[scripts] Created custom scripts directory: ${CUSTOM_SCRIPTS_DIR}`)
-    }
+    // Use lazy initialization
+    const scriptsDir = getCustomScriptsDir()
 
     // Validate script content
     if (!content || typeof content !== 'string') {
@@ -375,7 +648,7 @@ ipcMain.handle('upload-custom-script', async (_event, { fileName, content }) => 
     // Normalize scenario id and output path
     const rawName = path.basename(String(fileName || 'custom-script'))
     const scenarioId = rawName.replace(/\.(ts|js|cjs)$/i, '').replace(/\s+/g, '-').toLowerCase()
-    const scriptPath = path.join(CUSTOM_SCRIPTS_DIR, `${scenarioId}.cjs`)
+    const scriptPath = path.join(scriptsDir, `${scenarioId}.cjs`)
 
     let code = String(content).trim()
     if (!code) return { success: false, error: 'Script content cannot be empty' }
@@ -436,7 +709,9 @@ ipcMain.handle('upload-custom-script', async (_event, { fileName, content }) => 
 // Get list of custom scripts
 ipcMain.handle('get-custom-scripts', async () => {
   try {
-    const files = await promisify(fs.readdir)(CUSTOM_SCRIPTS_DIR)
+    // Use lazy initialization
+    const scriptsDir = getCustomScriptsDir()
+    const files = await promisify(fs.readdir)(scriptsDir)
     const scripts = files
       .filter(file => file.endsWith('.cjs')) // Only CommonJS files (template approach)
       .map(file => ({
@@ -464,3 +739,10 @@ ipcMain.handle('delete-custom-script', async (_event, scriptId) => {
     return { success: false, error: error?.message || 'Failed to delete script' }
   }
 })
+
+// Setup periodic cleanup every 6 hours
+setInterval(() => {
+  cleanupOldLogs()
+}, 6 * 60 * 60 * 1000) // 6 hours in milliseconds
+
+console.log('🕒 Log cleanup scheduled every 6 hours')

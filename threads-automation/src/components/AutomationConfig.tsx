@@ -17,11 +17,13 @@ type Props = {
     numThreads?: number
     csvData?: CsvRow[]
     selectedScenario?: string
+    filePath?: string
   }
   onContinue?: (config: {
     numThreads: number
     csvData?: CsvRow[]
     selectedScenario?: string
+    filePath?: string
   }) => void 
 }
 
@@ -78,17 +80,45 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
         setSelectedScript(initialSettings.selectedScenario)
       }
       
-      // Restore CSV data và numThreads
+      // Restore CSV data, numThreads và filePath
       setScenarios(prev => ({
         ...prev,
         'postAndComment': {
           ...prev['postAndComment'],
           csvData: initialSettings.csvData || prev['postAndComment'].csvData,
-          numThreads: initialSettings.numThreads || prev['postAndComment'].numThreads
+          numThreads: initialSettings.numThreads || prev['postAndComment'].numThreads,
+          filePath: initialSettings.filePath || prev['postAndComment'].filePath
         }
       }))
     }
   }, [initialSettings]) // Chạy khi initialSettings thay đổi
+
+  // Function to refresh data from saved Excel file
+  const handleRefreshData = async () => {
+    if (!currentScenario.filePath) {
+      alert('No Excel file selected. Please select a file first.')
+      return
+    }
+
+    try {
+      const api = window.api as any
+      if (!api?.parseCsv) {
+        console.warn('CSV parsing API is not available')
+        return
+      }
+
+      // Parse the saved file path again
+      const csvData = await api.parseCsv(currentScenario.filePath)
+      updateScenario('csvData', csvData.rows)
+      console.log('✅ Data refreshed from file:', currentScenario.filePath)
+      
+      // Show success message
+      alert(`Data refreshed successfully! Loaded ${csvData.rows.length} rows from file.`)
+    } catch (err) {
+      console.error('Failed to refresh data from file:', err)
+      alert(`Failed to refresh data from file: ${err}`)
+    }
+  }
 
   // Helper function to update scenario data
   const updateScenario = (key: string, value: any) => {
@@ -376,14 +406,6 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => loadCustomScripts()}
-                        >
-                          🔄 Refresh
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
                           onClick={handleImportCustomScript}
                         >
                           <Upload className="h-4 w-4" />
@@ -463,6 +485,17 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
                             >
                               Select
                             </Button>
+                            {currentScenario.filePath && (
+                              <Button 
+                                variant="outline"
+                                onClick={handleRefreshData}
+                                className="h-9 px-3"
+                                aria-label="Refresh data from selected file"
+                                title="Refresh data from selected file"
+                              >
+                                🔄 Refresh
+                              </Button>
+                            )}
                           </div>
                         </div>
 
@@ -688,7 +721,8 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
                   const config = {
                      numThreads: Math.max(1, threads),
                      csvData: currentScenario.csvData,
-                    selectedScenario: selectedScript
+                     selectedScenario: selectedScript,
+                     filePath: currentScenario.filePath
                    }
                    onContinue?.(config)
                  }}
