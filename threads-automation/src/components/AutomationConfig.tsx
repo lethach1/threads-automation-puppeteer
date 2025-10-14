@@ -225,6 +225,7 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
   // Available automation scripts (built-in + custom)
   const availableScripts = [
     { id: 'postAndComment', name: 'Posts and Comments', description: 'Automate posting and commenting on threads' },
+    { id: 'postAndCommentsUsingAI', name: 'Posts and Comments Using AI', description: 'Automate posting and commenting on threads with AI-generated content' },
     { id: 'login', name: 'Login Automation', description: 'Automate user login process' },
     { id: 'spamComments', name: 'Spam Comments', description: 'Spam comments automation with user input' },
     { id: 'downloadStatusAndImages', name: 'Download Status & Images', description: 'Download posts\' statuses and media from profiles' },

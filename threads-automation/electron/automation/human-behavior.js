@@ -585,11 +585,11 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
       const wrongChar = wrongChars[Math.floor(Math.random() * wrongChars.length)]
       
       await page.keyboard.type(wrongChar)
-      await humanDelay(100, 300)
+      await humanDelay(500, 1000)
 
       // Xóa ký tự sai
       await page.keyboard.press('Backspace')
-      await humanDelay(100, 200)
+      await humanDelay(500, 1000)
     }
 
     // Gõ ký tự đúng với delay tự nhiên
@@ -598,7 +598,7 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
 
     // Thỉnh thoảng dừng lâu hơn (như người suy nghĩ)
     if (Math.random() < 0.1) {
-      await humanDelay(300, 800)
+      await humanDelay(500, 1000)
     }
   }
   

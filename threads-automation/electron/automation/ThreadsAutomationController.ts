@@ -145,6 +145,7 @@ export const runAutomationOnPage = async (
         const scenarioMap: Record<string, string> = {
           'spamComments': 'spamComments',
           'postAndComment': 'postAndComment',
+          'postAndCommentsUsingAI': 'postAndCommentsUsingAI',
           'downloadStatusAndImages': 'downloadStatusAndImages',
           'downloadReddit': 'downloadReddit'
         }

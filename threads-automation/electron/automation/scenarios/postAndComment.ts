@@ -572,7 +572,7 @@ export async function run(page: Page, input: Input = {}) {
       // Step 8: Post
       if (isFirst) console.log('Step 8: Posting content...')
       await humanClick(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
-      await humanDelay(2000, 4000)
+      await humanDelay(3000, 4000)
       console.log('Step 8 completed: Content posted successfully')
 
       if ((item as any)?.schedule) {
@@ -597,7 +597,12 @@ export async function run(page: Page, input: Input = {}) {
             await humanTypeWithMistakes(page, '.xzsf02u > .xdj266r', comment)
             console.log(`⌨️ Typing comment ${j + 1}/${commentTexts.length}:`, comment.slice(0, 80))
             // click post comment button
-            await humanClick(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
+            try {
+              await humanClick(page, '.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
+            } catch {
+              await humanClick(page, 'div.x1s688f:nth-child(2)')
+            }
+            await humanDelay(1000, 2000)
             console.log(`✅ Comment ${j + 1} posted`)
           }
 

@@ -103,7 +103,6 @@ const generateChatGPTComment = async (
   }
   
 
-
   
 /**
  * Handle comment generation based on input
@@ -212,6 +211,17 @@ export async function run(page: Page, input: Input = {}) {
     console.log('[input] subPost:', normalizedInput.subPost)
     if (normalizedInput.schedule) console.log('[input] schedule:', normalizedInput.schedule)
     console.log('[input] items count:', items.length)
+    
+    // Debug: Log AI configuration from first item
+    if (items.length > 0) {
+      const firstItem = items[0]
+      console.log('[AI Config Debug] First item keys:', Object.keys(firstItem))
+      console.log('[AI Config Debug] GPT key available:', !!firstItem['GPT key'])
+      console.log('[AI Config Debug] Gemini key available:', !!firstItem['Gemini key'])
+      console.log('[AI Config Debug] Post Prompt available:', !!firstItem['Post Prompt'])
+      console.log('[AI Config Debug] Comment Prompt available:', !!firstItem['Comment Promt'])
+      console.log('[AI Config Debug] Comment Number:', firstItem['Comment Number'])
+    }
     
 
     // Click Add Subpost, then target the last textbox and type text
@@ -459,7 +469,12 @@ export async function run(page: Page, input: Input = {}) {
       }
       
       // Generate post text using AI (with or without image)
-      await handlePostText(imagePath, input, item)
+      await handlePostText(imagePath, {
+        ...input,
+        gptKey: item['GPT key'] || input.gptKey,
+        geminiKey: item['Gemini key'] || input.geminiKey,
+        postPrompt: item['Post Prompt'] || input.postPrompt
+      }, item)
 
       // Step 2: Open composer
       console.log(` ${isFirst ? 'Step 2' : 'Extra'}: Opening post composer...`)
@@ -692,7 +707,7 @@ export async function run(page: Page, input: Input = {}) {
       // Step 8: Post
       if (isFirst) console.log('Step 8: Posting content...')
       await humanClick(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
-      await humanDelay(2000, 4000)
+      await humanDelay(3000, 4000)
       console.log('Step 8 completed: Content posted successfully')
 
       if ((item as any)?.schedule) {
@@ -704,48 +719,49 @@ export async function run(page: Page, input: Input = {}) {
         await humanClick(page,'.x78zum5 > .x1i10hfl > .x90nhty > .xl1xv1r')
         await humanDelay(1000, 2000)
 
-        // Generate comments using AI instead of reading from Excel
-        const numberOfComments = input.commentNumber || 1
-        console.log(`🗨️ Generating ${numberOfComments} comment(s) using AI...`)
-        
-        const commentTexts: string[] = []
+        // Generate and post comments using AI
+        const numberOfComments = parseInt(String(item['Comment Number'] || input.commentNumber || 1), 10)
+        console.log(`🗨️ Generating and posting ${numberOfComments} comment(s) using AI...`)
+
         for (let j = 0; j < numberOfComments; j++) {
+          // Generate comment using AI
           const generatedComment = await handleComment({
-            prompt: input.commentPrompt,
-            gptKey: input.gptKey,
-            geminiKey: input.geminiKey,
-            linkShopee: input.linkShopee,
+            prompt: item['Comment Promt'] || input.commentPrompt,
+            gptKey: item['GPT key'] || input.gptKey,
+            geminiKey: item['Gemini key'] || input.geminiKey,
+            linkShopee: item['Link Shopee'] ? item['Link Shopee'].split('\r\n').filter(link => link.trim()) : input.linkShopee,
             postText: item.postText || ''
           })
+          
           if (generatedComment) {
-            commentTexts.push(generatedComment)
             console.log(`✅ Generated comment ${j + 1}/${numberOfComments}: "${generatedComment.slice(0, 80)}..."`)
-          }
-        }
-        
-        console.log(`🗨️ Comments to post: ${commentTexts.length}`)
-
-        for (let j = 0; j < commentTexts.length; j++) {
-          const comment = commentTexts[j]
-          const attemptPost = async () => {
-            // click comment button
-            await humanClick(page,'.x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619:nth-child(1) .x1xdureb:nth-child(3) .x6s0dn4:nth-child(2) .x1lliihq:nth-child(1)')
-            // click comment input
-            await humanClick(page,'.xzsf02u > .xdj266r')
-            await humanTypeWithMistakes(page, '.xzsf02u > .xdj266r', comment)
-            console.log(`⌨️ Typing comment ${j + 1}/${commentTexts.length}:`, comment.slice(0, 80))
-            // click post comment button
-            await humanClick(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
-            console.log(`✅ Comment ${j + 1} posted`)
-          }
-
-          await attemptPost()
-          await humanDelay(2000, 3000)
-          console.log(`✅ Comment ${j + 1} posted`)
-
-          // Human-like delay between comments
-          if (j < commentTexts.length - 1) {
-            await humanDelay(2000, 5000)
+            
+            // Post comment immediately
+            try {
+              // click comment button
+              await humanClick(page,'.x1c1b4dv:nth-child(7) .x78zum5:nth-child(1) > .x9f619:nth-child(1) .x1xdureb:nth-child(3) .x6s0dn4:nth-child(2) .x1lliihq:nth-child(1)')
+              // click comment input
+              await humanClick(page,'.xzsf02u > .xdj266r')
+              await humanTypeWithMistakes(page, '.xzsf02u > .xdj266r', generatedComment)
+              console.log(`⌨️ Typing comment ${j + 1}/${numberOfComments}:`, generatedComment.slice(0, 80))
+              // click post comment button
+              try {
+                await humanClick(page, '.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
+              } catch {
+                await humanClick(page, 'div.x1s688f:nth-child(2)')
+              }
+              await humanDelay(1000, 2000)
+              console.log(`✅ Comment ${j + 1} posted`)
+              
+              // Human-like delay between comments
+              if (j < numberOfComments - 1) {
+                await humanDelay(2000, 5000)
+              }
+            } catch (postError) {
+              console.error(`❌ Failed to post comment ${j + 1}:`, postError)
+            }
+          } else {
+            console.log(`⚠️ Failed to generate comment ${j + 1}, skipping...`)
           }
         }
 
