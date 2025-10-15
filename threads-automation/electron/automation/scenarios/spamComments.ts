@@ -443,6 +443,8 @@ const CommentFeedsAndSearch = async (
               await humanClick(page, composer)
               await humanDelay(600, 1200)
               await humanTypeWithMistakes(page, composer, commentText)
+              // Tăng thời gian chờ sau khi type xong comment
+              await humanDelay(3000, 5000)
             } else {
               console.log('[post] No comment generated, skipping')
               continue
@@ -464,7 +466,7 @@ const CommentFeedsAndSearch = async (
       console.log(`Comment iteration ${commentIteration + 1}/${commentCount} completed.`)
       
       // Add delay between comment iterations
-        await humanDelay(2000, 4000)
+        await humanDelay(3000, 5000)
     }
 
     console.log(`✅ All comment iterations completed. Total: ${commentCount} iteration(s)`)      

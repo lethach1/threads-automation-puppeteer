@@ -39,7 +39,7 @@ export const createGhostCursor = (page) => {
  * @param {number} minDelay - Delay tối thiểu giữa các ký tự (ms)
  * @param {number} maxDelay - Delay tối đa giữa các ký tự (ms)
  */
-export const humanType = async (page, selector, text, minDelay = 50, maxDelay = 150) => {
+export const humanType = async (page, selector, text, minDelay = 100, maxDelay = 300) => {
   const cursor = createGhostCursor(page);
   
   // Click vào element với ghost cursor
@@ -535,7 +535,7 @@ const humanRandomMouseMovement = async (page, duration = 3000) => {
  * @param {string} text - Text cần type
  * @param {number} mistakeRate - Tỷ lệ gõ sai (0-1)
  */
-const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate = 0.05) => {
+const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate = 0.07) => {
   let elementHandle = selectorOrElement
   if (typeof selectorOrElement === 'string') {
     const selector = selectorOrElement
@@ -594,7 +594,7 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
 
     // Gõ ký tự đúng với delay tự nhiên
     await page.keyboard.type(char)
-    await humanDelay(30, 120)
+    await humanDelay(80, 200)
 
     // Thỉnh thoảng dừng lâu hơn (như người suy nghĩ)
     if (Math.random() < 0.1) {
