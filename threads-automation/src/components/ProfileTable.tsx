@@ -144,9 +144,26 @@ export default function ProfileTable({ onBack, settings, csvData, selectedScenar
   const sortedProfiles = useMemo(() => {
     const items = [...profiles]
     items.sort((a, b) => {
-      const an = (renamedNames.get(a.id) || a.displayName || a.name).toLowerCase()
-      const bn = (renamedNames.get(b.id) || b.displayName || b.name).toLowerCase()
-      return sortAsc ? an.localeCompare(bn) : bn.localeCompare(an)
+      const an = (renamedNames.get(a.id) || a.displayName || a.name || '').trim().toLowerCase()
+      const bn = (renamedNames.get(b.id) || b.displayName || b.name || '').trim().toLowerCase()
+      
+      // Extract numbers from profile names for natural sorting
+      const extractNumbers = (name: string) => {
+        const match = name.match(/(\d+)/)
+        return match ? parseInt(match[1], 10) : 0
+      }
+      
+      const aNum = extractNumbers(an)
+      const bNum = extractNumbers(bn)
+      
+      // If both have numbers, sort by number
+      if (aNum > 0 && bNum > 0) {
+        return sortAsc ? aNum - bNum : bNum - aNum
+      }
+      
+      // Otherwise sort alphabetically
+      const nameComparison = sortAsc ? an.localeCompare(bn) : bn.localeCompare(an)
+      return nameComparison
     })
     return items
   }, [profiles, renamedNames, sortAsc])
