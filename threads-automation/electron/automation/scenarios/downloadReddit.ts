@@ -89,27 +89,19 @@ const ensureDir = async (dirPath: string) => {
       throw new Error('Directory path is empty')
     }
     
-    // Check if path contains invalid characters or is outside allowed directories
+    // Check if path contains invalid characters
     const normalizedPath = path.resolve(dirPath)
-    const cwd = process.cwd()
     
-    // Ensure path is within allowed directories (Documents, Desktop, Downloads)
-    const userHome = process.env.USERPROFILE || process.env.HOME || ''
-    const allowedPaths = [
-      path.join(userHome, 'Documents'),
-      path.join(userHome, 'Desktop'), 
-      path.join(userHome, 'Downloads'),
-      cwd // Current working directory as fallback
-    ]
+    // Allow paths in common drives (C:, D:, etc.)
+    const allowedDrives = ['C:', 'D:', 'E:', 'F:']
+    const isAllowedDrive = allowedDrives.some(d => normalizedPath.toUpperCase().startsWith(d))
     
-    const isAllowed = allowedPaths.some(allowedPath => normalizedPath.startsWith(allowedPath))
-    if (!isAllowed) {
-      console.warn(`[fs] Path ${dirPath} is not in allowed directories, using fallback`)
+    if (!isAllowedDrive) {
+      console.warn(`[fs] Path ${dirPath} is not on an allowed drive, using fallback`)
       throw new Error(`Path ${dirPath} is not accessible`)
     }
     
     await fs.mkdir(dirPath, { recursive: true })
-    console.log(`[fs] Created directory: ${dirPath}`)
   } catch (error) {
     console.error(`[fs] Failed to create directory ${dirPath}:`, error)
     throw error
@@ -196,7 +188,6 @@ const ensureRedditMetaCsvHeader = async (csvPath: string) => {
     if (!stat || stat.size === 0) {
       // Prepend UTF-8 BOM so Excel renders Vietnamese correctly; use CRLF line endings on Windows
       await fs.writeFile(csvPath, '\uFEFFindex,title,text,label,ts\r\n', { encoding: 'utf-8' })
-      console.log(`[csv] Initialized reddit meta CSV with header: ${csvPath}`)
     }
   } catch (e) {
     console.error('[csv] Failed to ensure reddit meta CSV header:', e instanceof Error ? e.message : String(e))
@@ -214,11 +205,9 @@ const appendRedditMetaRow = async (csvPath: string, index: number, title: string
 
 const downloadFile = async (mediaUrl: string, filePath: string) => {
   try {
-    console.log(`[download] Starting download:`)
     const res = await fetch(mediaUrl)
     if (!res.ok || !res.body) throw new Error(`Failed to download ${mediaUrl}: ${res.status}`)
     await pipeline(res.body as any, createWriteStream(filePath))
-    console.log(`[download] Successfully downloaded: ${filePath}`)
   } catch (error) {
     console.error(`[download] Failed to download ${mediaUrl}:`, error)
     throw error
@@ -231,11 +220,9 @@ const savePostMediaFromHandle = async (
   postIndex: number
 ) => {
   const { imgUrls, videoUrls } = await extractMediaUrlsFromPost(postHandle)
-  console.log(`[media] Found images=${imgUrls.length}, videos=${videoUrls.length} at index=${postIndex}`)
 
   // Nếu không có media nào, bỏ qua post này
   if (imgUrls.length === 0 && videoUrls.length === 0) {
-    console.log(`[media] No media found for post ${postIndex}, skipping...`)
     return
   }
 
@@ -252,9 +239,9 @@ const savePostMediaFromHandle = async (
     const fp = path.join(baseOutputDir, filename)
     try {
       await downloadFile(url, fp)
-      console.log(`[download] Saved image: ${fp}`)
+      console.log(`[media] Saved: ${filename}`)
     } catch (e) {
-      console.warn(`[download] Failed to download image ${url}:`, e instanceof Error ? e.message : String(e))
+      console.warn(`[media] Failed to download image:`, e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -266,9 +253,9 @@ const savePostMediaFromHandle = async (
     const fp = path.join(baseOutputDir, filename)
     try {
       await downloadFile(url, fp)
-      console.log(`[download] Saved video: ${fp}`)
+      console.log(`[media] Saved: ${filename}`)
     } catch (e) {
-      console.warn(`[download] Failed to download video ${url}:`, e instanceof Error ? e.message : String(e))
+      console.warn(`[media] Failed to download video:`, e instanceof Error ? e.message : String(e))
     }
   }
 }
@@ -305,22 +292,20 @@ const downloadRedditPosts = async (
   quantity?: number
 ) => {
   try {
-    console.log(`[download] Starting Reddit content download for directory: ${linkDirectory}`)
+    console.log(`[download] Starting download to: ${linkDirectory}`)
     
     // Scope: contain all loaded posts inside this container (strict)
     const SCOPE_SELECTOR = scopeSelector
     const POST_SELECTOR = postSelector
-    console.log(`[download] Waiting for scope selector: ${SCOPE_SELECTOR}`)
     
     const scope = await page.waitForSelector(SCOPE_SELECTOR, { timeout: 30000 })
     if (!scope) {
       throw new Error(`Scope not found for selector: ${SCOPE_SELECTOR}`)
     }
-    console.log(`[download] Scope found, querying posts with: ${POST_SELECTOR}`)
 
     // Find all posts within scope
     const posts = await scope.$$(POST_SELECTOR)
-    console.log(`[feed] Found ${posts.length} posts in scope`)
+    console.log(`[feed] Found ${posts.length} posts`)
 
     if (posts.length === 0) {
       throw new Error('No posts found in scope')
@@ -334,15 +319,13 @@ const downloadRedditPosts = async (
     // Default output directory under Downloads/RedditDownloads
     const defaultDir = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Downloads', 'RedditDownloads')
     let baseOutputDir = linkDirectory || defaultDir
-    console.log(`[download] Using output directory: ${baseOutputDir}`)
     
     try {
       await ensureDir(baseOutputDir)
     } catch (dirError) {
-      console.error(`[download] Failed to create base directory ${baseOutputDir}:`, dirError)
+      console.error(`[download] Failed to create directory:`, dirError)
       // Fallback to user's Downloads folder
       const userDownloads = path.join(process.env.USERPROFILE || process.env.HOME || '', 'Downloads', 'RedditDownloads')
-      console.log(`[download] Falling back to: ${userDownloads}`)
       await ensureDir(userDownloads)
       baseOutputDir = userDownloads
     }
@@ -355,10 +338,8 @@ const downloadRedditPosts = async (
       const hasUnprocessedPost = currentIndex < posts.length
 
       if (hasUnprocessedPost) {
-        console.log(`[feed] Processing post at index=${currentIndex}`)
         const currentPost = posts[currentIndex]
         if (!currentPost) {
-          console.log(`[feed] No post at index ${currentIndex}, skipping`)
           currentIndex++
         } else {
           try {
@@ -369,12 +350,11 @@ const downloadRedditPosts = async (
             const meta = await getRedditPostMeta(currentPost)
             const postText = meta.text || ''
             const tsStr = formatTsToYYMMDD(meta.ts)
-            console.log(`[meta] title="${(meta.title || '').slice(0, 80)}" label="${meta.label}" ts=${tsStr}`)
+            console.log(`[${currentIndex + 1}] ${(meta.title || '').slice(0, 50)}...`)
             await appendRedditMetaRow(csvPath, currentIndex + 1, meta.title, postText, meta.label || '', tsStr)
 
             // Save media for this post
             await savePostMediaFromHandle(currentPost, baseOutputDir, currentIndex)
-            console.log(`[feed] Successfully processed post ${currentIndex}`)
           } catch (postError) {
             console.error(`[feed] Failed to process post ${currentIndex}:`, postError instanceof Error ? postError.message : String(postError))
             // Tiếp tục với post tiếp theo thay vì dừng
@@ -390,7 +370,6 @@ const downloadRedditPosts = async (
         }
       } else {
         // No unprocessed posts left; try to scroll further to trigger lazy loading
-        console.log(`[feed] No more posts to process, trying to load more...`)
         await humanScroll(page, 800)
       }
 
@@ -398,7 +377,7 @@ const downloadRedditPosts = async (
       const updatedPosts = await scope.$$(POST_SELECTOR)
       if (updatedPosts.length > posts.length) {
         const newlyLoadedCount = updatedPosts.length - posts.length
-        console.log(`[feed] Lazy loading triggered: ${newlyLoadedCount} new posts loaded`)
+        console.log(`[feed] Loaded ${newlyLoadedCount} more posts`)
         posts.push(...updatedPosts.slice(posts.length))
         noNewPostsStreak = 0
       } else {
@@ -411,7 +390,7 @@ const downloadRedditPosts = async (
       const maxCount = Math.max(0, Number(quantity) || 0)
       const reachedQty = maxCount > 0 && currentIndex >= maxCount
       if (processedAllLoaded && (giveUpLoadingMore || reachedQty)) {
-        console.log('[feed] No more new posts detected; stopping processing')
+        console.log('[feed] Completed processing')
         break
       }
     }
@@ -425,11 +404,17 @@ const downloadRedditPosts = async (
 }
 
 const buildRedditProfileUrl = (forumName?: string) => {
-  if (!forumName) return undefined
+  if (!forumName) {
+    return undefined
+  }
   const trimmed = String(forumName).trim()
-  if (!/^r\//.test(trimmed)) return undefined
+  if (!trimmed || !/^r\//.test(trimmed)) {
+    return undefined
+  }
   const pathPart = trimmed.replace(/\/+$/,'') + '/'
-  return `https://www.reddit.com/${pathPart}`
+  const url = `https://www.reddit.com/${pathPart}`
+  console.log(`[forum] Parsed: '${trimmed}' -> '${url}'`)
+  return url
 }
 
 
@@ -439,36 +424,54 @@ export async function run(page: Page, input: Input = {}) {
     console.log('Starting Reddit download...')
     console.log('📝 Raw Input:', input)
 
-    const { normalizedInput } = buildNormalizedInput(input)
-    const targetUrl = normalizedInput.targetUrl || buildRedditProfileUrl(normalizedInput.forumName || input.forumName)
-    if (!targetUrl) {
-      throw new Error('Missing forumName. Please provide forumName like "r/TroChuyenLinhTinh" or an explicit targetUrl.')
+    const { normalizedInput, items } = buildNormalizedInput(input)
+
+    // Process each row from items; fallback to single normalized object if needed
+    const rows = Array.isArray(items) && items.length > 0 ? items : [
+      {
+        forumName: normalizedInput.forumName ?? (input as any)?.forumName,
+        linkDirectory: normalizedInput.linkDirectory ?? (input as any)?.linkDirectory,
+        targetUrl: normalizedInput.targetUrl ?? (input as any)?.targetUrl,
+        quantity: normalizedInput.quantity ?? (input as any)?.quantity
+      }
+    ]
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] as any
+      const candidateForum = row?.forumName
+
+      const builtFromForum = buildRedditProfileUrl(candidateForum)
+      const targetUrl = row?.targetUrl || builtFromForum
+
+      if (!targetUrl) {
+        console.warn(`[forum][row ${i + 1}] Missing forumName/targetUrl. Skipping this row.`)
+        continue
+      }
+
+      console.log(`[navigate][row ${i + 1}] Processing: ${targetUrl}`)
+      await page.goto(targetUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      })
+
+      await humanDelay(2000, 3500)
+
+      const outputDir = row?.linkDirectory
+      const forum = row?.forumName
+      const forumSub = forum ? sanitizeFolderName(forum) : undefined
+      const finalOutputDir = forumSub && outputDir ? path.join(outputDir, forumSub) : (outputDir || undefined)
+      if (finalOutputDir) {
+        await ensureDir(finalOutputDir)
+      }
+      const quantity = row?.quantity
+      await downloadRedditPosts(
+        page,
+        finalOutputDir,
+        'main#main-content',
+        'article > shreddit-post',
+        quantity
+      )
     }
-    console.log(`[navigate] Navigate: ${targetUrl}`)
-
-    await page.goto(targetUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
-    })
-    console.log(`[navigate] Successfully navigated to: ${targetUrl}`)
-
-    await humanDelay(2000, 3500)
-
-    const outputDir = normalizedInput.linkDirectory || input.linkDirectory
-    const forum = normalizedInput.forumName || input.forumName
-    const forumSub = forum ? sanitizeFolderName(forum) : undefined
-    const finalOutputDir = forumSub && outputDir ? path.join(outputDir, forumSub) : (outputDir || undefined)
-    if (finalOutputDir) {
-      await ensureDir(finalOutputDir)
-    }
-    const quantity = normalizedInput.quantity ?? input.quantity
-    await downloadRedditPosts(
-      page,
-      finalOutputDir,
-      'main#main-content',
-      'article > shreddit-post',
-      quantity
-    )
 
     return { success: true }
 
