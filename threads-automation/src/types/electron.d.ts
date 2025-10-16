@@ -22,6 +22,10 @@ declare global {
         success: boolean
         error?: string
       }>
+      runAutomationForProfile(payload: { profileId: string; scenario?: string; input?: any; showConsole?: boolean }): Promise<{
+        success: boolean
+        error?: string
+      }>
       closeProfile(profileId: string): Promise<{
         success: boolean
         error?: string
@@ -43,6 +47,12 @@ declare global {
       deleteCustomScript(scriptId: string): Promise<{
         success: boolean
         message?: string
+        error?: string
+      }>
+    }
+    consoleApi: {
+      setShowConsole(enabled: boolean): Promise<{
+        success: boolean
         error?: string
       }>
     }

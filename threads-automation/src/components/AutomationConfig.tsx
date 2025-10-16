@@ -18,12 +18,14 @@ type Props = {
     csvData?: CsvRow[]
     selectedScenario?: string
     filePath?: string
+    showConsole?: boolean
   }
   onContinue?: (config: {
     numThreads: number
     csvData?: CsvRow[]
     selectedScenario?: string
     filePath?: string
+    showConsole?: boolean
   }) => void 
 }
 
@@ -47,21 +49,24 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
       filePath: '',
       numThreads: 3,
       schedules: [] as ScheduleItem[],
-      csvData: [] as CsvRow[]
+      csvData: [] as CsvRow[],
+      showConsole: false
     },
     'login': {
       useInputExcel: true,
       filePath: '',
       numThreads: 3,
       schedules: [] as ScheduleItem[],
-      csvData: [] as CsvRow[]
+      csvData: [] as CsvRow[],
+      showConsole: false
     },
     'interactive': {
       useInputExcel: true,
       filePath: '',
       numThreads: '3',
       schedules: [] as ScheduleItem[],
-      csvData: [] as CsvRow[]
+      csvData: [] as CsvRow[],
+      showConsole: false
     }
   })
   
@@ -87,7 +92,8 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
           ...prev['postAndComment'],
           csvData: initialSettings.csvData || prev['postAndComment'].csvData,
           numThreads: initialSettings.numThreads || prev['postAndComment'].numThreads,
-          filePath: initialSettings.filePath || prev['postAndComment'].filePath
+          filePath: initialSettings.filePath || prev['postAndComment'].filePath,
+          showConsole: initialSettings.showConsole ?? prev['postAndComment'].showConsole
         }
       }))
     }
@@ -626,6 +632,25 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
                          className="w-20 h-8 text-sm"
                        />
                     </div>
+
+                    {/* Show CMD console */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="show-console" className="text-sm font-medium">Show CMD logs</Label>
+                        <Switch
+                          id="show-console"
+                          checked={Boolean((currentScenario as any).showConsole)}
+                          onCheckedChange={async (v) => {
+                            const enabled = v === true
+                            updateScenario('showConsole', enabled)
+                            try {
+                              await (window as any).consoleApi?.setShowConsole(enabled)
+                            } catch {}
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">Open a CMD window to live tail logs during runs.</p>
+                    </div>
                   </div>
                 </section>
             )}
@@ -724,7 +749,8 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
                      numThreads: Math.max(1, threads),
                      csvData: currentScenario.csvData,
                      selectedScenario: selectedScript,
-                     filePath: currentScenario.filePath
+                     filePath: currentScenario.filePath,
+                     showConsole: (currentScenario as any).showConsole === true
                    }
                    onContinue?.(config)
                  }}

@@ -64,6 +64,7 @@ let win: BrowserWindow | null
 // Console logging setup
 let consoleSetup = false
 let logFile = ''
+let consoleVisible = false
 let originalLog: any, originalError: any, originalWarn: any
 
 // Auto-cleanup old log files (older than 3 days)
@@ -204,9 +205,27 @@ goto loop
       console.log('✅ Console window opened for automation logs')
       console.log(`📝 Log file: ${logFile}`)
       console.log(`📝 Batch file: ${tempBatchFile}`)
+      consoleVisible = true
     } catch (consoleError) {
       console.warn('Failed to open console window:', consoleError)
     }
+  }
+}
+
+// Try to close the console window by its title
+const closeConsoleWindow = () => {
+  try {
+    // Attempt to kill CMD windows with the specific title
+    const kill = spawn('taskkill', ['/FI', 'WINDOWTITLE eq Threads Automation Logs', '/F'], {
+      detached: true,
+      stdio: 'ignore',
+      shell: true
+    })
+    kill.unref()
+    consoleVisible = false
+    console.log('🛑 Console window close command issued')
+  } catch (error) {
+    console.warn('Failed to close console window:', error)
   }
 }
 
@@ -312,6 +331,22 @@ app.whenReady().then(() => {
 })
 
 // IPC: Open directory picker and return selected path
+ipcMain.handle('set-show-console', async (_event, enabled: boolean) => {
+  try {
+    if (enabled) {
+      if (!consoleVisible) {
+        openConsoleWindow()
+      }
+    } else {
+      if (consoleVisible) {
+        closeConsoleWindow()
+      }
+    }
+    return { success: true }
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Unknown error' }
+  }
+})
 ipcMain.handle('select-directory', async () => {
   const result = await dialog.showOpenDialog({
     title: 'Select a directory',
@@ -491,14 +526,13 @@ ipcMain.handle('close-profile', async (_event, profileId: string) => {
 })
 
 // Run a simple automation step on an existing session (example stub)
-ipcMain.handle('run-automation-for-profile', async (_event, payload: { profileId: string; scenario?: string; input?: any }) => {
+ipcMain.handle('run-automation-for-profile', async (_event, payload: { profileId: string; scenario?: string; input?: any; showConsole?: boolean }) => {
   try {
     const { profileId, scenario, input } = payload || ({} as any)
     console.log('[ipc] run-automation-for-profile for', profileId)
     if (!profileId) return { success: false, error: 'profileId is required' }
     
-    // Open console window when automation starts
-    openConsoleWindow()
+    // Do not auto-open console here; controlled by configuration toggle
     const { runAutomationOnPage } = await import('./automation/ThreadsAutomationController.js')
     console.log('[ipc] scenario:', scenario, 'input keys:', input ? Object.keys(input) : [])
     const sm = await loadSessionManager()
@@ -527,9 +561,7 @@ ipcMain.handle('run-automation-batch', async (_event, payload: { profileIds: str
 
     console.log('[ipc] run-automation-batch', { count: profileIds.length, concurrency, scenario })
 
-    // Open console window when batch automation starts
-    openConsoleWindow()
-    
+    // Do not auto-open console here; controlled by configuration toggle
     const { runAutomationOnPage } = await import('./automation/ThreadsAutomationController.js')
     const results: Array<{ profileId: string; success: boolean; error?: string }> = []
     let cursor = 0

@@ -23,6 +23,7 @@ type Props = {
     // windowHeight: number // Không cần sử dụng
     // scalePercent: number // Không cần sử dụng
     numThreads: number
+    showConsole?: boolean
   }
   csvData?: Array<Record<string, string>>
   selectedScenario?: string

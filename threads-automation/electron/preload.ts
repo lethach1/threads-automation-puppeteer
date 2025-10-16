@@ -84,7 +84,7 @@ contextBridge.exposeInMainWorld('automationApi', {
       }
     }
   },
-  runAutomationForProfile: async (payload: { profileId: string; scenario?: string; input?: any }) => {
+  runAutomationForProfile: async (payload: { profileId: string; scenario?: string; input?: any; showConsole?: boolean }) => {
     try {
       return await ipcRenderer.invoke('run-automation-for-profile', payload)
     } catch (error: any) {
@@ -119,6 +119,17 @@ contextBridge.exposeInMainWorld('customScriptApi', {
   deleteCustomScript: async (scriptId: string) => {
     try {
       return await ipcRenderer.invoke('delete-custom-script', scriptId)
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Unknown error' }
+    }
+  }
+})
+
+// Console control API
+contextBridge.exposeInMainWorld('consoleApi', {
+  setShowConsole: async (enabled: boolean) => {
+    try {
+      return await ipcRenderer.invoke('set-show-console', enabled)
     } catch (error: any) {
       return { success: false, error: error?.message || 'Unknown error' }
     }
