@@ -312,16 +312,25 @@ const CommentFeedsAndSearch = async (
 
     console.log(`[CommentSearchKeyWord] Mode: ${mode}, Comment count: ${commentCount}`)
 
-    // Scope: contain all loaded posts inside this container (strict, no fallback)
+    // Scope: contain all loaded posts inside this container (with fallback)
     const SCOPE_SELECTOR = scopeSelector
-    const scope = await page.waitForSelector(SCOPE_SELECTOR, { timeout: 15000 })
+    const FALLBACK_SCOPE_SELECTOR = 'div.x1c1b4dv.x13dflua.x11xpdln'
+    let scope = await page.waitForSelector(SCOPE_SELECTOR, { timeout: 15000 }).catch(() => null)
     if (!scope) {
-      throw new Error(`Scope not found for selector: ${SCOPE_SELECTOR}`)
+      scope = await page.waitForSelector(FALLBACK_SCOPE_SELECTOR, { timeout: 10000 }).catch(() => null)
+      if (!scope) {
+        throw new Error(`Scope not found for selectors: ${SCOPE_SELECTOR} | ${FALLBACK_SCOPE_SELECTOR}`)
+      }
     }
 
     // Find all posts within scope
-    const posts = await scope.$$('div[data-pressable-container="true"]')
+    let posts = await scope.$$('div[data-pressable-container="true"]')
     console.log(`[feed] Found ${posts.length} posts in scope`)
+
+    // Fallback: if not found in scope, try global query once
+    if (posts.length === 0) {
+      posts = await page.$$('div[data-pressable-container="true"]')
+    }
 
     if (posts.length === 0) {
       throw new Error('No posts found in scope')
@@ -390,11 +399,8 @@ const CommentFeedsAndSearch = async (
             console.log('[feed] Could not hover top nav:', e instanceof Error ? e.message : String(e))
           }
           
-          // Method 3: Move to viewport corner
-          await page.evaluate(() => {
-            window.scrollTo(0, 0) // Scroll to top
-          })
-          await page.mouse.move(10, 10) // Move to top-left corner
+          // Method 3: Move to viewport corner without scrolling the page
+          await page.mouse.move(10, 10)
           
           await humanDelay(500, 800) // Wait longer to ensure cursor moved
           console.log('[feed] Cursor moved to safe area using multiple methods')
@@ -404,12 +410,28 @@ const CommentFeedsAndSearch = async (
 
         // Step B: Focus composer textbox and type comment with mistakes
         try {
-          // Wait for composer to appear within current post after clicking reply button
-          const composer = await page.waitForSelector('div.x1wxtd61 [contenteditable="true"][role="textbox"]', { timeout: 5000 })          
+          // Wait and locate composer within current post using resilient selectors
+          await humanDelay(300, 500)
+          const composerSelectorCandidates = [
+            'div.x1wxtd61 [contenteditable="true"][role="textbox"]',
+            '[contenteditable="true"][role="textbox"]',
+            '[contenteditable="true"]'
+          ]
+          let composer: any = null
+          for (const sel of composerSelectorCandidates) {
+            composer = await currentPost.$(sel)
+            if (composer) break
+          }
+          if (!composer) {
+            await page.waitForSelector('[contenteditable="true"][role="textbox"]', { timeout: 8000 }).catch(() => null)
+            for (const sel of composerSelectorCandidates) {
+              composer = await page.$(sel)
+              if (composer) break
+            }
+          }
           // Just focus on composer without any hover/click to avoid errors
           if (composer) {
             console.log(`[feed] Found composer textbox, typing comment...`)
-            // Focus directly without hovering or clicking
             await composer.focus()
             await humanDelay(200, 300)
           }
@@ -417,18 +439,36 @@ const CommentFeedsAndSearch = async (
             // Get status text from current post  
             let statusText = ''
             try {
-              const statusSelector = 'div.x1wxtd61 .x1xdureb:nth-child(4) .x1a6qonq'
-              const statusElement = await page.$(statusSelector)
+              const statusSelectorCandidates = [
+                'div.x1wxtd61 .x1xdureb:nth-child(4) .x1a6qonq',
+                '.x1xdureb .x1a6qonq',
+                'div.x1a6qonq',
+                '.x1a6qonq span'
+              ]
+              let statusElement: any = null
+              for (const sel of statusSelectorCandidates) {
+                statusElement = await currentPost.$(sel)
+                if (statusElement) break
+              }
+              if (!statusElement) {
+                for (const sel of statusSelectorCandidates) {
+                  statusElement = await page.$(sel)
+                  if (statusElement) break
+                }
+              }
               if (statusElement) {
-                const rawText = await statusElement.evaluate(el => el.textContent || '')
-                // Strip trailing Translate helper if present and normalize
-                statusText = rawText.replace(/\s*Translate\s*$/i, '').trim()
+                const rawText = await statusElement.evaluate((el: Element) => (el.textContent || ''))
+                // Remove helper labels and normalize whitespace
+                statusText = rawText
+                  .replace(/\b(Translate|Dịch)\b/gi, '')
+                  .replace(/\s+/g, ' ')
+                  .trim()
                 console.log(`[feed] Status text: "${statusText.slice(0, 100)}..." (len=${statusText.length})`)
                 if (!statusText) {
                   console.log('[feed] Warning: statusText is empty after cleaning')
                 }
               } else {
-                console.log(`[feed] Status text element not found for selector: ${statusSelector}`)
+                console.log('[feed] Status text element not found with fallback selectors')
               }
             } catch (e) {
               console.log('[feed] Error getting status text:', e instanceof Error ? e.message : String(e))
@@ -457,8 +497,11 @@ const CommentFeedsAndSearch = async (
         }
 
         // Step C: Click post comment (submit)   
-        await humanClick(page, '.x2lah0s:nth-child(1) > .x9dqhi0')        
-          console.log(`[CommentSearchKeyWord] Successfully commented on post index=${commentIteration}`)
+        try {
+          await humanClick(page, '.x2lah0s:nth-child(1) > .x9dqhi0')
+        } catch (e) {
+          await humanClick(page, 'div.x1s688f:nth-child(2)')
+        }
         } else {
           console.log(`[feed] Reply button not found for post index=${commentIteration}, skipping`)
         }
