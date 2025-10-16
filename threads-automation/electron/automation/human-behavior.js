@@ -88,7 +88,13 @@ export const humanClick = async (page, selectorOrElement) => {
       el.scrollIntoView({ block: 'center', inline: 'center' })
     })
   } catch {}
-  await handle.click()
+  // Use ghost-cursor for natural movement and click
+  const cursor = createGhostCursor(page)
+  try {
+    await cursor.move(handle)
+  } catch {}
+  await humanDelay(120, 280)
+  await cursor.click(handle)
   await humanDelay(1000, 2000)
 };
 
@@ -100,23 +106,34 @@ export const humanClick = async (page, selectorOrElement) => {
  * @param {string} direction - Hướng scroll ('up' hoặc 'down')
  */
 export const humanScroll = async (page, distance = 500, direction = 'down') => {
-  const steps = Math.floor(Math.random() * 20) + 10;
-  const stepDistance = distance / steps;
-  
+  // Số bước và easing để mô phỏng tăng/giảm tốc (ease-in-out)
+  const steps = Math.floor(Math.random() * 20) + 12;
+  const baseStep = distance / steps;
+  let remaining = distance;
+
   for (let i = 0; i < steps; i++) {
-    const scrollAmount = stepDistance + (Math.random() - 0.5) * 20;
-    
-    if (direction === 'down') {
-      await page.evaluate((amount) => window.scrollBy(0, amount), scrollAmount);
-    } else {
-      await page.evaluate((amount) => window.scrollBy(0, -amount), scrollAmount);
-    }
-    
-    // Delay ngẫu nhiên giữa các bước scroll
-    await humanDelay(50, 200);
-    
-    // Thỉnh thoảng dừng lâu hơn
-    if (Math.random() < 0.2) {
+    const t = steps <= 1 ? 1 : i / (steps - 1);
+    // Easing S-curve: nhanh ở giữa, chậm ở đầu/cuối
+    const ease = 0.5 - 0.5 * Math.cos(Math.PI * t); // easeInOutSine [0..1]
+
+    // Lượng scroll cho bước này: nền + điều chỉnh theo tốc độ + nhiễu nhỏ
+    const factor = 0.7 + 0.8 * ease; // ~0.7..1.5
+    let scrollAmount = baseStep * factor + (Math.random() - 0.5) * 15;
+
+    // Không vượt quá phần còn lại, và giữ > 1px
+    scrollAmount = Math.max(1, Math.min(scrollAmount, remaining));
+    remaining -= scrollAmount;
+
+    const signedAmount = direction === 'down' ? scrollAmount : -scrollAmount;
+    await page.evaluate((amount) => window.scrollBy(0, amount), signedAmount);
+
+    // Delay lớn hơn ở đầu/cuối, nhỏ hơn ở giữa (ngược với ease)
+    const baseDelayMs = 80 + (1 - ease) * 220; // ~80..300ms
+    const jitterMs = Math.random() * 80;
+    await humanDelay(baseDelayMs, baseDelayMs + jitterMs);
+
+    // Thỉnh thoảng dừng lâu hơn (mô phỏng dừng đọc ngắn)
+    if (Math.random() < 0.18) {
       await humanDelay(500, 1500);
     }
   }
@@ -211,6 +228,7 @@ const humanScrollFeedUntilAndClick = async (page, targetSelector, options = {}) 
   } = options;
 
   const startTime = Date.now();
+  const cursor = createGhostCursor(page);
 
   const tryFocusAndClick = async () => {
     const handle = await page.$(targetSelector);
@@ -220,17 +238,21 @@ const humanScrollFeedUntilAndClick = async (page, targetSelector, options = {}) 
         el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
       });
     } catch {}
-    await humanDelay(400, 900);
+    await humanDelay(300, 700);
 
     if (clickSelectorWithin) {
       const inner = await handle.$(clickSelectorWithin);
       if (inner) {
-        await humanClick(page, inner);
+        await cursor.move(inner);
+        await humanDelay(120, 280);
+        await cursor.click(inner);
         return true;
       }
     }
 
-    await humanClick(page, handle);
+    await cursor.move(handle);
+    await humanDelay(120, 280);
+    await cursor.click(handle);
     return true;
   };
 
@@ -535,7 +557,7 @@ const humanRandomMouseMovement = async (page, duration = 3000) => {
  * @param {string} text - Text cần type
  * @param {number} mistakeRate - Tỷ lệ gõ sai (0-1)
  */
-const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate = 0.07) => {
+const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate = 0.05) => {
   let elementHandle = selectorOrElement
   if (typeof selectorOrElement === 'string') {
     const selector = selectorOrElement
@@ -560,50 +582,58 @@ const humanTypeWithMistakes = async (page, selectorOrElement, text, mistakeRate 
   } catch {}
 
   await humanClick(page, elementHandle)
-  await humanDelay(100, 200)
+  await humanDelay(150, 300)
 
   // Ensure element is focused and ready for typing
   await elementHandle.focus()
-  await humanDelay(50, 150)
+  await humanDelay(120, 240)
 
-  // If text contains surrogate pairs (emoji), type whole string to preserve them
-  const hasEmoji = /[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(text)
-  if (hasEmoji) {
-    // Type whole string with a human-like delay between keystrokes to preserve emojis
-    await page.keyboard.type(text, { delay: Math.random() * 70 + 40 })
-    await humanDelay(1000, 1500)
-    return
-  }
-
+  // Iterate by code units but group surrogate pairs (emojis) as one token
   for (let i = 0; i < text.length; i++) {
-    const char = text[i]
+    let token = text[i]
+    const code = token.charCodeAt(0)
+    const isHighSurrogate = code >= 0xD800 && code <= 0xDBFF
+    const next = text[i + 1]
+    const nextCode = next ? next.charCodeAt(0) : 0
+    const isLowSurrogate = nextCode >= 0xDC00 && nextCode <= 0xDFFF
+    if (isHighSurrogate && isLowSurrogate) {
+      token = token + next
+      i += 1 // consume the pair as one unit
+    }
 
     // Thỉnh thoảng gõ sai (tạo lỗi thực tế hơn)
     if (Math.random() < mistakeRate) {
       // Tạo lỗi gõ thực tế hơn: gõ ký tự gần đó trên bàn phím
-      const wrongChars = getNearbyKeys(char)
-      const wrongChar = wrongChars[Math.floor(Math.random() * wrongChars.length)]
+      const wrongChars = getNearbyKeys(token)
+      let wrongChar = wrongChars[Math.floor(Math.random() * wrongChars.length)]
+      // Ensure wrongChar differs from intended char (handles diacritics, punctuation, space)
+      if (wrongChar === token) {
+        const fallbackLetters = 'qwertyuiopasdfghjklzxcvbnm'
+        const pick = fallbackLetters[Math.floor(Math.random() * fallbackLetters.length)]
+        const isUpper = /[A-Z]/.test(token)
+        wrongChar = isUpper ? pick.toUpperCase() : pick
+      }
       
       await page.keyboard.type(wrongChar)
-      await humanDelay(500, 1000)
+      await humanDelay(1200, 2000)
 
       // Xóa ký tự sai
       await page.keyboard.press('Backspace')
-      await humanDelay(500, 1000)
+      await humanDelay(1200, 2000)
     }
 
     // Gõ ký tự đúng với delay tự nhiên
-    await page.keyboard.type(char)
-    await humanDelay(80, 200)
+    await page.keyboard.type(token)
+    await humanDelay(70, 120)
 
     // Thỉnh thoảng dừng lâu hơn (như người suy nghĩ)
-    if (Math.random() < 0.1) {
-      await humanDelay(500, 1000)
+    if (Math.random() < 0.03) {
+      await humanDelay(1500, 3000)
     }
   }
   
   // Final delay to ensure all typing is complete
-  await humanDelay(1000, 1500)
+  await humanDelay(2000, 3500)
 };
 
 // Helper function để tạo lỗi gõ thực tế hơn
