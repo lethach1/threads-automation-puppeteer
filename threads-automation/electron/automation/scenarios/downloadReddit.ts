@@ -25,6 +25,8 @@ type Input = {
   targetUrl?: string
   // Optional: number of posts to process
   quantity?: number
+  // Optional: sort by parameter (e.g., "new", "hot", "top")
+  sortBy?: string
 }
 
 type NormalizedInput = {
@@ -32,6 +34,7 @@ type NormalizedInput = {
   linkDirectory?: string
   targetUrl?: string
   quantity?: number
+  sortBy?: string
 }
 
 // Pure helper function to normalize input data
@@ -54,19 +57,22 @@ const buildNormalizedInput = (input: Input) => {
       const forumName = getByBase('Forum Name')
       const linkDirectory = getByBase('Folder Directory')
       const quantityRaw = getByBase('Quantity')
+      const sortBy = getByBase('Sort by')
 
       return { 
         linkDirectory,
         targetUrl: undefined,
         forumName,
-        quantity: quantityRaw != null ? Number(quantityRaw) : undefined
+        quantity: quantityRaw != null ? Number(quantityRaw) : undefined,
+        sortBy
       }
     } catch {
       return { 
         forumName: undefined, 
         linkDirectory: undefined,
         quantity: undefined,
-        targetUrl: undefined
+        targetUrl: undefined,
+        sortBy: undefined
       }
     }
   }
@@ -403,7 +409,7 @@ const downloadRedditPosts = async (
   }
 }
 
-const buildRedditProfileUrl = (forumName?: string) => {
+const buildRedditProfileUrl = (forumName?: string, sortBy?: string) => {
   if (!forumName) {
     return undefined
   }
@@ -412,8 +418,11 @@ const buildRedditProfileUrl = (forumName?: string) => {
     return undefined
   }
   const pathPart = trimmed.replace(/\/+$/,'') + '/'
-  const url = `https://www.reddit.com/${pathPart}`
-  console.log(`[forum] Parsed: '${trimmed}' -> '${url}'`)
+  
+  // Add sort by parameter if provided
+  const sortParam = sortBy ? `${sortBy.toLowerCase()}/` : ''
+  const url = `https://www.reddit.com/${pathPart}${sortParam}`
+  console.log(`[forum] Parsed: '${trimmed}' with sort '${sortBy}' -> '${url}'`)
   return url
 }
 
@@ -440,7 +449,7 @@ export async function run(page: Page, input: Input = {}) {
       const row = rows[i] as any
       const candidateForum = row?.forumName
 
-      const builtFromForum = buildRedditProfileUrl(candidateForum)
+      const builtFromForum = buildRedditProfileUrl(candidateForum, row?.sortBy)
       const targetUrl = row?.targetUrl || builtFromForum
 
       if (!targetUrl) {

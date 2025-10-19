@@ -707,7 +707,7 @@ export async function run(page: Page, input: Input = {}) {
       // Step 8: Post
       if (isFirst) console.log('Step 8: Posting content...')
       await humanClick(page,'.x2lah0s:nth-child(1) > .x1i10hfl > .xc26acl')
-      await humanDelay(3000, 4000)
+      await humanDelay(5000, 8000)
       console.log('Step 8 completed: Content posted successfully')
 
       if ((item as any)?.schedule) {
@@ -729,7 +729,7 @@ export async function run(page: Page, input: Input = {}) {
             prompt: item['Comment Promt'] || input.commentPrompt,
             gptKey: item['GPT key'] || input.gptKey,
             geminiKey: item['Gemini key'] || input.geminiKey,
-            linkShopee: item['Link Shopee'] ? item['Link Shopee'].split('\r\n').filter(link => link.trim()) : input.linkShopee,
+            linkShopee: item['Link Shopee'] ? item['Link Shopee'].split('\r\n').filter((link: string) => link.trim()) : input.linkShopee,
             postText: item.postText || ''
           })
           
