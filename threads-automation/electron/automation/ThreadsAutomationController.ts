@@ -147,7 +147,8 @@ export const runAutomationOnPage = async (
           'postAndComment': 'postAndComment',
           'postAndCommentsUsingAI': 'postAndCommentsUsingAI',
           'downloadStatusAndImages': 'downloadStatusAndImages',
-          'downloadReddit': 'downloadReddit'
+          'downloadReddit': 'downloadReddit',
+          'downloadLemon8': 'downloadLemon8'
         }
         
         const mappedScenario = scenarioMap[scenario] || scenario

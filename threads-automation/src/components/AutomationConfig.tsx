@@ -236,6 +236,7 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
     { id: 'spamComments', name: 'Spam Comments', description: 'Spam comments automation with user input' },
     { id: 'downloadStatusAndImages', name: 'Download Status & Images', description: 'Download posts\' statuses and media from profiles' },
     { id: 'downloadReddit', name: 'Download Reddit', description: 'Download Reddit posts metadata and media' },
+    { id: 'downloadLemon8', name: 'Download Lemon8', description: 'Download Lemon8 posts with images and content from different categories' },
     ...customScripts.map(script => ({
       id: script.id,
       name: script.name,
