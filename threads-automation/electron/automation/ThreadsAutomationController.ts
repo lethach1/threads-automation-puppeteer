@@ -146,6 +146,7 @@ export const runAutomationOnPage = async (
           'spamComments': 'spamComments',
           'postAndComment': 'postAndComment',
           'postAndCommentsUsingAI': 'postAndCommentsUsingAI',
+          'postAndCommentRelatedLink': 'postAndCommentRelatedLink',
           'downloadStatusAndImages': 'downloadStatusAndImages',
           'downloadReddit': 'downloadReddit',
           'downloadLemon8': 'downloadLemon8'

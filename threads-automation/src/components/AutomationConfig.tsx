@@ -52,6 +52,54 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
       csvData: [] as CsvRow[],
       showConsole: false
     },
+    'postAndCommentsUsingAI': {
+      useInputExcel: true,
+      filePath: '',
+      numThreads: 3,
+      schedules: [] as ScheduleItem[],
+      csvData: [] as CsvRow[],
+      showConsole: false
+    },
+    'postAndCommentRelatedLink': {
+      useInputExcel: true,
+      filePath: '',
+      numThreads: 3,
+      schedules: [] as ScheduleItem[],
+      csvData: [] as CsvRow[],
+      showConsole: false
+    },
+    'spamComments': {
+      useInputExcel: true,
+      filePath: '',
+      numThreads: 3,
+      schedules: [] as ScheduleItem[],
+      csvData: [] as CsvRow[],
+      showConsole: false
+    },
+    'downloadStatusAndImages': {
+      useInputExcel: true,
+      filePath: '',
+      numThreads: 3,
+      schedules: [] as ScheduleItem[],
+      csvData: [] as CsvRow[],
+      showConsole: false
+    },
+    'downloadReddit': {
+      useInputExcel: true,
+      filePath: '',
+      numThreads: 3,
+      schedules: [] as ScheduleItem[],
+      csvData: [] as CsvRow[],
+      showConsole: false
+    },
+    'downloadLemon8': {
+      useInputExcel: true,
+      filePath: '',
+      numThreads: 3,
+      schedules: [] as ScheduleItem[],
+      csvData: [] as CsvRow[],
+      showConsole: false
+    },
     'login': {
       useInputExcel: true,
       filePath: '',
@@ -72,8 +120,8 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
   
   type ScheduleItem = { id: string, value: any, saved: boolean }
   
-  // Get current scenario data - using postAndComment as default since we removed scenario selection
-  const currentScenario = scenarios['postAndComment']
+  // Get current scenario data based on selected script
+  const currentScenario = scenarios[selectedScript as keyof typeof scenarios] || scenarios['postAndComment']
 
   // Restore state từ session data khi component mount
   useEffect(() => {
@@ -85,17 +133,26 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
         setSelectedScript(initialSettings.selectedScenario)
       }
       
-      // Restore CSV data, numThreads và filePath
-      setScenarios(prev => ({
-        ...prev,
-        'postAndComment': {
-          ...prev['postAndComment'],
-          csvData: initialSettings.csvData || prev['postAndComment'].csvData,
-          numThreads: initialSettings.numThreads || prev['postAndComment'].numThreads,
-          filePath: initialSettings.filePath || prev['postAndComment'].filePath,
-          showConsole: initialSettings.showConsole ?? prev['postAndComment'].showConsole
+      // Restore CSV data, numThreads và filePath for all scenarios
+      setScenarios(prev => {
+        const updatedScenarios = { ...prev }
+        const selectedScenario = initialSettings.selectedScenario || 'postAndComment'
+        
+        // Update the selected scenario with initial settings
+        if (updatedScenarios[selectedScenario as keyof typeof updatedScenarios]) {
+          const currentScenario = updatedScenarios[selectedScenario as keyof typeof updatedScenarios]
+          const updatedScenario = {
+            ...currentScenario,
+            csvData: initialSettings.csvData || currentScenario.csvData,
+            numThreads: initialSettings.numThreads || currentScenario.numThreads,
+            filePath: initialSettings.filePath || currentScenario.filePath,
+            showConsole: initialSettings.showConsole ?? currentScenario.showConsole
+          }
+          updatedScenarios[selectedScenario as keyof typeof updatedScenarios] = updatedScenario as any
         }
-      }))
+        
+        return updatedScenarios
+      })
     }
   }, [initialSettings]) // Chạy khi initialSettings thay đổi
 
@@ -128,13 +185,19 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
 
   // Helper function to update scenario data
   const updateScenario = (key: string, value: any) => {
-    setScenarios(prev => ({
-      ...prev,
-      'postAndComment': {
-        ...prev['postAndComment'],
-        [key]: value
+    setScenarios(prev => {
+      if (!selectedScript || !prev[selectedScript as keyof typeof prev]) {
+        return prev
       }
-    }))
+      const currentScenario = prev[selectedScript as keyof typeof prev]
+      return {
+        ...prev,
+        [selectedScript]: {
+          ...currentScenario,
+          [key]: value
+        }
+      }
+    })
   }
 
   // const handleAddSchedule = () => {
@@ -232,6 +295,7 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
   const availableScripts = [
     { id: 'postAndComment', name: 'Posts and Comments', description: 'Automate posting and commenting on threads' },
     { id: 'postAndCommentsUsingAI', name: 'Posts and Comments Using AI', description: 'Automate posting and commenting on threads with AI-generated content' },
+    { id: 'postAndCommentRelatedLink', name: 'Posts and Comments with Related Link', description: 'Automate posting and commenting with related links' },
     { id: 'login', name: 'Login Automation', description: 'Automate user login process' },
     { id: 'spamComments', name: 'Spam Comments', description: 'Spam comments automation with user input' },
     { id: 'downloadStatusAndImages', name: 'Download Status & Images', description: 'Download posts\' statuses and media from profiles' },

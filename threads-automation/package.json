@@ -34,6 +34,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "esbuild": "^0.25.10",
+    "flexsearch": "^0.8.212",
     "lucide-react": "^0.543.0",
     "openai": "^6.1.0",
     "puppeteer-core": "^24.17.1",
