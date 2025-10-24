@@ -71,9 +71,12 @@ export default function ProfileTable({ onBack, settings, csvData, selectedScenar
     try {
       const map = new Map<string, { [key: string]: any; items?: Array<{ [key: string]: any }> }>()
       const nameToId = new Map<string, string>()
-      for (const p of profiles) {
-        nameToId.set((p.displayName || p.name || '').trim(), p.id)
-      }
+        for (const p of profiles) {
+          const profileName = (p.displayName || p.name || '').trim()
+          nameToId.set(profileName, p.id)
+          // Also add lowercase version for case-insensitive matching
+          nameToId.set(profileName.toLowerCase(), p.id)
+        }
       // Check if data has profile column
       const hasProfileColumn = csvData.some(row => 
         Object.keys(row).some(key => key.toLowerCase() === 'profile')
@@ -97,9 +100,13 @@ export default function ProfileTable({ onBack, settings, csvData, selectedScenar
           if (!groups[profileName]) groups[profileName] = []
           groups[profileName].push(row)
         }
-        Object.entries(groups).forEach(([profileName, rows]) => {
-          const id = nameToId.get(profileName.trim())
-          if (!id) return
+          Object.entries(groups).forEach(([profileName, rows]) => {
+            const id = nameToId.get(profileName.trim()) || nameToId.get(profileName.trim().toLowerCase())
+            if (!id) {
+              console.log(`❌ No profile ID found for "${profileName}". Available:`, Array.from(nameToId.keys()))
+              return
+            }
+            console.log(`✅ Mapped "${profileName}" -> ${id}`)
           
           // Get all available headers from the first row (excluding profile column)
           const availableHeaders = rows.length > 0 ? Object.keys(rows[0]).filter(key => 
@@ -239,8 +246,9 @@ export default function ProfileTable({ onBack, settings, csvData, selectedScenar
           // Bước 2: Chạy automation cho tất cả profiles trong batch
           const automationPromises = openedIds.map(async (profileId) => {
             try {
-              const input = inputByProfileId.get(profileId) || {}
-              console.log(`🎯 Running automation for profile: ${profileId}`)
+                const input = inputByProfileId.get(profileId) || {}
+                console.log(`🎯 Running automation for profile: ${profileId}`)
+                console.log(`📝 Input data for ${profileId}:`, input)
               
               const autoRes = await window.automationApi.runAutomationForProfile({
                 profileId,
