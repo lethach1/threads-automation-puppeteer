@@ -164,8 +164,18 @@ export const runAutomationOnPage = async (
     
     // (rest of function unchanged)
   } catch (error: any) {
+    // Log chi tiết để debug
     console.error('[router] scenario error:', error)
-    return { success: false, error: error?.message || 'Scenario error' }
+    console.error('[router] error message:', error?.message)
+    console.error('[router] error stack:', error?.stack)
+    console.error('[router] error name:', error?.name)
+    console.error('[router] error constructor:', error?.constructor?.name)
+    
+    // Return error để UI nhận được
+    return { 
+      success: false, 
+      error: error?.message || error?.toString() || String(error) || 'Unknown error' 
+    }
   }
 }
 

@@ -27,9 +27,11 @@ type Props = {
   }
   csvData?: Array<Record<string, string>>
   selectedScenario?: string
+  affiliateLinkPoolPath?: string
+  affiliateLinkPoolData?: Array<Record<string, string>>
 }
 
-export default function ProfileTable({ onBack, settings, csvData, selectedScenario }: Props) {
+export default function ProfileTable({ onBack, settings, csvData, selectedScenario, affiliateLinkPoolPath, affiliateLinkPoolData }: Props) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [sortAsc, setSortAsc] = useState(true)
@@ -253,7 +255,11 @@ export default function ProfileTable({ onBack, settings, csvData, selectedScenar
               const autoRes = await window.automationApi.runAutomationForProfile({
                 profileId,
                 scenario: selectedScenario || 'postAndComment',
-                input
+                input: {
+                  ...input,
+                  affiliateLinkPoolPath: affiliateLinkPoolPath || '',
+                  affiliateLinkPoolData: affiliateLinkPoolData || []
+                }
               })
 
               if (!autoRes?.success) {

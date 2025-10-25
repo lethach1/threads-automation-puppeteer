@@ -11,6 +11,8 @@ type AutomationSettings = {
   csvData?: Array<Record<string, string>>
   selectedScenario?: string
   filePath?: string
+  affiliateLinkPoolPath?: string
+  affiliateLinkPoolData?: Array<Record<string, string>>
 }
 
 function App() {
@@ -30,6 +32,8 @@ function App() {
           settings={settings}
           csvData={settings.csvData}
           selectedScenario={settings.selectedScenario}
+          affiliateLinkPoolPath={settings.affiliateLinkPoolPath}
+          affiliateLinkPoolData={settings.affiliateLinkPoolData}
         />
       </div>
     )

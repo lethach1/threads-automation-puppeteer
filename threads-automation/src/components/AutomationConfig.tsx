@@ -63,6 +63,8 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
     'postAndCommentRelatedLink': {
       useInputExcel: true,
       filePath: '',
+      affiliateLinkPoolPath: '',
+      affiliateLinkPoolData: [] as CsvRow[],
       numThreads: 3,
       schedules: [] as ScheduleItem[],
       csvData: [] as CsvRow[],
@@ -248,6 +250,30 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
         updateScenario('csvData', csvData.rows)
       } catch (err) {
         console.error('Failed to parse file:', err)
+      }
+    }
+  }
+
+  const handleAffiliateLinkPoolSelect = async () => {
+    const api = window.api as any
+    if (!api?.selectFile) {
+      console.warn('File picker API is not available')
+      return
+    }
+    const selectedFile = await api.selectFile()
+    if (!selectedFile) return
+    
+    updateScenario('affiliateLinkPoolPath', selectedFile)
+    
+    // Auto-parse file if it's a supported format (CSV, XLSX, XLS, XLSM)
+    const fileExtension = selectedFile.toLowerCase().split('.').pop()
+    if (['csv', 'xlsx', 'xls', 'xlsm'].includes(fileExtension || '')) {
+      try {
+        const affiliateData = await api.parseCsv(selectedFile)
+        updateScenario('affiliateLinkPoolData', affiliateData.rows)
+        console.log('✅ Affiliate Link Pool data loaded:', affiliateData.rows.length, 'rows')
+      } catch (err) {
+        console.error('Failed to parse affiliate link pool file:', err)
       }
     }
   }
@@ -469,7 +495,7 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
                   </h2>
 
                   {/* Automation Script Selection */}
-                  <div className="space-y-4">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="script-select">
                         Select Automation Script
@@ -487,37 +513,68 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
                       </div>
                     </div>
                     
-                    <Select value={selectedScript} onValueChange={setSelectedScript}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose an automation script..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableScripts.map((script) => (
-                          <div key={script.id} className="relative">
-                            <SelectItem value={script.id} className="pr-12">
-                              <span className="font-semibold pr-2">{script.name}</span>
-                            </SelectItem>
-                            {customScripts.some(cs => cs.id === script.id) && (
-                              <button
-                                className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-red-100 rounded flex items-center justify-center z-10"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  if (confirm('Are you sure you want to delete this custom script?')) {
-                                    handleDeleteCustomScript(script.id)
-                                  }
-                                }}
-                              >
-                                <Trash2 className="h-3 w-3 text-red-500 hover:text-red-700" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="w-80">
+                      <Select value={selectedScript} onValueChange={setSelectedScript}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose an automation script..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableScripts.map((script) => (
+                            <div key={script.id} className="relative">
+                              <SelectItem value={script.id} className="pr-12">
+                                <span className="font-semibold pr-2">{script.name}</span>
+                              </SelectItem>
+                              {customScripts.some(cs => cs.id === script.id) && (
+                                <button
+                                  className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-red-100 rounded flex items-center justify-center z-10"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    if (confirm('Are you sure you want to delete this custom script?')) {
+                                      handleDeleteCustomScript(script.id)
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3 text-red-500 hover:text-red-700" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                    
-                  </div>
+                     {/* Affiliate Link Pool - only show for postAndCommentRelatedLink script */}
+                     {selectedScript === 'postAndCommentRelatedLink' && (
+                       <div className="w-80 space-y-2 mt-4">
+                         <Label htmlFor="affiliate-link-pool" className="text-sm font-medium">
+                           Affiliate Link Pool
+                         </Label>
+                         <div className="flex items-center space-x-2">
+                           <Input
+                             id="affiliate-link-pool"
+                             type="text"
+                             placeholder="Select Affiliate Link Pool CSV file..."
+                             value={(currentScenario as any).affiliateLinkPoolPath || ''}
+                             onChange={(e) => updateScenario('affiliateLinkPoolPath', e.target.value)}
+                             className="flex-1"
+                             aria-label="Affiliate Link Pool file path"
+                           />
+                           <Button 
+                             variant="outline"
+                             onClick={handleAffiliateLinkPoolSelect}
+                             className="h-9 px-3"
+                             aria-label="Select Affiliate Link Pool file"
+                           >
+                             Select
+                           </Button>
+                         </div>
+                         <p className="text-xs text-muted-foreground">
+                           Select a CSV file containing affiliate links to be used in posts
+                         </p>
+                       </div>
+                     )}
+                   </div>
 
                   {/* Use input Excel option */}
                      <div className="flex items-center space-x-3">
@@ -810,13 +867,15 @@ export default function AutomationConfig({ initialSettings, onContinue }: Props)
                      return Number.isFinite(n) ? n : fallback
                    }
                   const threads = toInt(currentScenario.numThreads, 3)
-                  const config = {
-                     numThreads: Math.max(1, threads),
-                     csvData: currentScenario.csvData,
-                     selectedScenario: selectedScript,
-                     filePath: currentScenario.filePath,
-                     showConsole: (currentScenario as any).showConsole === true
-                   }
+                   const config = {
+                      numThreads: Math.max(1, threads),
+                      csvData: currentScenario.csvData,
+                      selectedScenario: selectedScript,
+                      filePath: currentScenario.filePath,
+                      affiliateLinkPoolPath: (currentScenario as any).affiliateLinkPoolPath || '',
+                      affiliateLinkPoolData: (currentScenario as any).affiliateLinkPoolData || [],
+                      showConsole: (currentScenario as any).showConsole === true
+                    }
                    onContinue?.(config)
                  }}
                >
