@@ -219,7 +219,7 @@ function normalizeRecord(raw: Record<string, any> = {}) {
  * @param gptKey - ChatGPT API key
  * @returns Generated comment text or null if failed
  */
- const generateChatGPTComment = async (
+ const generateChatGPT = async (
   prompt: string,
   gptKey?: string
 ): Promise<string | null> => {
@@ -262,7 +262,7 @@ function normalizeRecord(raw: Record<string, any> = {}) {
  * @param geminiKey - Gemini API key
  * @returns Generated comment text or null if failed
  */
-const generateGeminiComment = async (
+const generateGemini = async (
   prompt: string,
   geminiKey?: string
 ): Promise<string | null> => {
@@ -273,7 +273,7 @@ const generateGeminiComment = async (
     const ai = new GoogleGenerativeAI(geminiKey || '');
 
     // Call Gemini API
-    const model = ai.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
     const response = await model.generateContent(prompt);
 
     const generatedText = response.response.text() || null
@@ -287,7 +287,102 @@ const generateGeminiComment = async (
   }
 }
 
+/**
+ * Generate multiple comments using AI based on postText and product names
+ * @param postText - The original post text
+ * @param productNames - Array of product names
+ * @param commentsQuantity - Number of comments to generate
+ * @param gptKey - ChatGPT API key
+ * @param geminiKey - Gemini API key
+ * @returns Array of generated comments
+ */
+const generateCommentsWithAI = async (
+  postText: string,
+  productNames: string[],
+  commentsQuantity: number,
+  gptKey?: string,
+  geminiKey?: string
+): Promise<string[]> => {
+  try {
+    console.log(`🤖 Generating ${commentsQuantity} comments using AI...`)
+    
+    const prompt = `Dựa vào nội dung bài post sau và danh sách sản phẩm, hãy tạo ${commentsQuantity} comment tự nhiên và hấp dẫn. Mỗi comment nên đề cập đến sản phẩm tương ứng và có tính thương mại nhẹ nhàng.
 
+Bài post: "${postText}"
+
+Danh sách sản phẩm: ${productNames.join(', ')}
+
+Yêu cầu:
+- Tạo ${commentsQuantity} comment riêng biệt
+- Mỗi comment dài 20-50 từ
+- Comment phải tự nhiên, không quá spam
+- Đề cập đến sản phẩm tương ứng
+- Có tính thương mại nhẹ nhàng
+- Comment ở ngôi thứ nhất, là người đăng bài post tự viết comment
+- Trả về format: Comment1: [nội dung] | Comment2: [nội dung] | ...`
+
+    let generatedText = ''
+    
+    // Priority 1: Try Gemini if available
+    if (geminiKey) {
+      generatedText = await generateGemini(prompt, geminiKey) || ''
+    }
+    
+    // Priority 2: Try ChatGPT if Gemini failed or not available
+    if (!generatedText && gptKey) {
+      generatedText = await generateChatGPT(prompt, gptKey) || ''
+    }
+    
+    if (!generatedText) {
+      console.log(`❌ No AI generated comments, using fallback`)
+      // Fallback comments
+      return productNames.map((productName) => 
+        `Sản phẩm ${productName} này thật sự tuyệt vời! Tôi đã thử và rất hài lòng với chất lượng.`
+      )
+    }
+    
+    // Parse generated comments
+    const comments: string[] = []
+    const commentMatches = generatedText.match(/Comment\d+:\s*([^|]+)/gi)
+    
+    if (commentMatches && commentMatches.length > 0) {
+      for (const match of commentMatches) {
+        const comment = match.replace(/Comment\d+:\s*/i, '').trim()
+        if (comment) {
+          comments.push(comment)
+        }
+      }
+    }
+    
+    // If parsing failed, split by common separators
+    if (comments.length === 0) {
+      const separators = ['|', '\n', ';', 'Comment']
+      for (const separator of separators) {
+        const parts = generatedText.split(separator).map(s => s.trim()).filter(s => s.length > 10)
+        if (parts.length >= commentsQuantity) {
+          comments.push(...parts.slice(0, commentsQuantity))
+          break
+        }
+      }
+    }
+    
+    // Ensure we have enough comments
+    while (comments.length < commentsQuantity) {
+      const fallbackComment = `Phải thử ngay nha các bà ơii ${productNames[comments.length % productNames.length]} .`
+      comments.push(fallbackComment)
+    }
+    
+    console.log(`✅ Generated ${comments.length} comments`)
+    return comments.slice(0, commentsQuantity)
+    
+  } catch (error) {
+    console.error('❌ Failed to generate comments with AI:', error)
+    // Fallback to simple comments
+    return productNames.map((productName) => 
+      `Phải thử ngay nha các bà ơii ${productName} .`
+    )
+  }
+}
 
 /**
 * Handle AI keyword extraction from postText
@@ -311,7 +406,7 @@ const handleSearchKeyWord = async (
 
   // Priority 1: Try Gemini if available
   if(normalizedInput.geminiKey) {
-    const geminiKeywords = await generateGeminiComment(
+    const geminiKeywords = await generateGemini(
       prompt,
       normalizedInput.geminiKey
     )
@@ -322,7 +417,7 @@ const handleSearchKeyWord = async (
   
   // Priority 2: Try ChatGPT if Gemini failed or not available
   if (!searchKeywords && normalizedInput.gptKey) {
-    const chatGPTKeywords = await generateChatGPTComment(
+    const chatGPTKeywords = await generateChatGPT(
       prompt,
       normalizedInput.gptKey
     )
@@ -339,25 +434,6 @@ const handleSearchKeyWord = async (
   return searchKeywords
 }
 
-// Extract comments from dynamic fields: Comment1..N, Comments, commentText
-function extractCommentTexts(raw: Record<string, any>): string[] {
-  const entries = Object.entries(raw || {})
-  const numbered: Array<{ order: number; value: string }> = []
-
-  for (const [key, val] of entries) {
-    if (val == null) continue
-    const str = String(val).trim()
-    if (!str) continue
-    const match = /^comments?\s*(\d+)?$/i.exec(key)
-    if (match) {
-      const order = match[1] ? parseInt(match[1], 10) : 0
-      numbered.push({ order, value: str })
-    }
-  }
-
-  numbered.sort((a, b) => a.order - b.order)
-  return numbered.map((n) => n.value).map((s) => s.trim()).filter(Boolean)
-}
 
 // Extract sub-posts from dynamic fields: subPost1..N, subPosts, subPost
 function extractSubPostTexts(raw: Record<string, any>): string[] {
@@ -538,18 +614,22 @@ async function processAffiliateLinks(
   items: any[],
   products: Product[],
   input: Input
-): Promise<void> {
+): Promise<{ [key: string]: { links: string[], productNames: string[] } }> {
   // Build search indexes
   buildSearchIndexes(products)
+  
+  const result: { [key: string]: { links: string[], productNames: string[] } } = {}
   
   // AI-powered product search for each item
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const postText = item.postText || ''
+    const commentsQuantity = parseInt(item.commentsQuantity || item['Comments Quantity'] || '0', 10) || 0
     
     if (!postText) continue
     
     console.log(`\n🔍 Processing item ${i + 1}: "${postText.substring(0, 50)}..."`)
+    console.log(`📝 Comments quantity: ${commentsQuantity}`)
     
     try {
       // Step 1: Send postText to AI to get search keywords
@@ -576,30 +656,47 @@ async function processAffiliateLinks(
         }
       }
       
-      // Step 3: Enhance postText with affiliate link
+      // Step 3: Generate multiple affiliate links for comments
+      const affiliateLinks: string[] = []
+      const productNames: string[] = []
+      
       if (matchingProduct?.discountLink) {
         console.log(`🎯 Selected product: ${matchingProduct.name}`)
         console.log(`💰 Price: ${matchingProduct.price}`)
         console.log(`🔗 Discount link: ${matchingProduct.discountLink}`)
         
-        const enhancedPostText = `${postText}\n\n🔗 Link mua: ${matchingProduct.discountLink}`
-        item.postText = enhancedPostText
-        console.log(`✅ Enhanced post with affiliate link`)
+        // Generate multiple links for comments (same product, different links if available)
+        for (let j = 0; j < commentsQuantity; j++) {
+          affiliateLinks.push(matchingProduct.discountLink)
+          productNames.push(matchingProduct.name)
+        }
+        console.log(`✅ Generated ${affiliateLinks.length} affiliate links`)
       } else {
         console.log(`⚠️ No matching product found for keywords: ${keywordList.join(', ')}`)
-        // Fallback to random product
-        const randomProduct = getRandomProduct(products)
-        if (randomProduct?.discountLink) {
-          const enhancedPostText = `${postText}\n\n🔗 Link mua: ${randomProduct.discountLink}`
-          item.postText = enhancedPostText
-          console.log(`🎲 Fallback random product: ${randomProduct.name}`)
+        // Fallback to random products
+        for (let j = 0; j < commentsQuantity; j++) {
+          const randomProduct = getRandomProduct(products)
+          if (randomProduct?.discountLink) {
+            affiliateLinks.push(randomProduct.discountLink)
+            productNames.push(randomProduct.name)
+            console.log(`🎲 Fallback random product ${j + 1}: ${randomProduct.name}`)
+          }
         }
       }
+      
+      // Store results for this item
+      result[`item_${i}`] = {
+        links: affiliateLinks,
+        productNames: productNames
+      }
+      
     } catch (error) {
       console.error(`❌ AI processing failed for item ${i + 1}:`, error)
       throw error
     }
   }
+  
+  return result
 }
 
 
@@ -629,6 +726,8 @@ export async function run(page: Page, input: Input = {}) {
     // FlexSearch and AI-powered product search
     console.log(' AI-powered product search with FlexSearch:')
     
+    let affiliateResults: { [key: string]: { links: string[], productNames: string[] } } = {}
+    
     if (input.affiliateLinkPoolData && input.affiliateLinkPoolData.length > 0) {
       // Parse affiliate data to Product format
       const products: Product[] = parseAffiliateData(input.affiliateLinkPoolData)
@@ -636,7 +735,7 @@ export async function run(page: Page, input: Input = {}) {
       
       if (products.length > 0) {
         // Process affiliate links for items
-        await processAffiliateLinks(items, products, input)
+        affiliateResults = await processAffiliateLinks(items, products, input)
       } else {
         console.warn('⚠️ No products found in affiliate pool')
       }
@@ -912,7 +1011,35 @@ export async function run(page: Page, input: Input = {}) {
         await humanClick(page,'.x78zum5 > .x1i10hfl > .x90nhty > .xl1xv1r')
         await humanDelay(1000, 2000)
 
-        const commentTexts = extractCommentTexts(item as any)
+        // Get affiliate results for this item
+        const itemKey = `item_${i}`
+        const affiliateData = affiliateResults[itemKey]
+        const commentsQuantity = parseInt(item.commentsQuantity || item['Comments Quantity'] || '0', 10) || 0
+        
+        let commentTexts: string[] = []
+        
+        if (affiliateData && affiliateData.links.length > 0 && commentsQuantity > 0) {
+          // Generate AI comments with affiliate links
+          console.log(`🤖 Generating ${commentsQuantity} AI comments with affiliate links...`)
+          const aiComments = await generateCommentsWithAI(
+            item.postText || '',
+            affiliateData.productNames,
+            commentsQuantity,
+            item.gptKey || input.gptKey,
+            item.geminiKey || input.geminiKey
+          )
+          
+          // Combine AI comments with affiliate links
+          commentTexts = aiComments.map((comment, index) => {
+            const link = affiliateData.links[index] || affiliateData.links[0]
+            return `${comment}: ${link}`
+          })
+        } else {
+          // No affiliate data or comments quantity, skip comments
+          console.log('ℹ️ No affiliate data or comments quantity, skipping comments')
+          commentTexts = []
+        }
+        
         console.log(`🗨️ Comments to post: ${commentTexts.length}`)
 
         for (let j = 0; j < commentTexts.length; j++) {
