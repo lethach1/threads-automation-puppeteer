@@ -314,7 +314,7 @@ Danh sách sản phẩm: ${productNames.join(', ')}
 
 Yêu cầu:
 - Tạo ${commentsQuantity} comment riêng biệt
-- Mỗi comment dài 20-50 từ
+- Mỗi comment dài 10-20 từ
 - Comment phải tự nhiên, không quá spam
 - Đề cập đến sản phẩm tương ứng
 - Có tính thương mại nhẹ nhàng
